@@ -57,7 +57,7 @@ A skill is a capability: how to do something. A use case is a goal: what someone
 3. **The links are many to many.** Generate-excel can belong to month-end close, sales reporting and inventory reporting at once, and month-end close can include several skills.
 4. **A skill can use another skill.** The link comes from one of two places. A skill can declare it through the `dependencies` field that #844 proposes. Or the registry detects it at registration: it already fetches SKILL.md then, so it can look for the names of other registered skills in the text. The registry stores the detected links, not the text. Skills have no way to declare this today.
 5. **Categories are tags or parent use cases.** "Spreadsheet generation" is a tag on the skill, and "Finance" is a parent use case. There is no separate category system.
-6. **Traversal stops at two hops** from the match and skips nodes it has already visited, so a loop (skill A uses B, B uses A) ends.
+6. **Hops count tools reached from the goal, not raw links.** The limit is two hops, and a run of skill-uses-skill links collapses into one hop, so the walk still reaches a tool under a composed skill: in `use case -> skill -> skill -> tool` the skill chain is the first hop and the tool is the second. The walk skips nodes it has already visited, so a loop (skill A uses B, B uses A) ends.
 7. **Credit flows to every link on a path that worked.** A skill that works across many use cases rises everywhere.
 
 An example walk for "close the books for October":
@@ -79,7 +79,7 @@ How it answers:
 
 1. It embeds the task and ranks use cases and skills together by cosine similarity, held in memory. It runs plain search in parallel.
 2. It drops anything the caller cannot see, using the same per-entity checks search uses.
-3. It follows links from the best match, up to two hops, and drops a candidate if the caller cannot see one of its tools.
+3. It follows links from the best match, up to two hops counted as tools-from-goal so a skill-to-skill chain is one hop, and drops a candidate if the caller cannot see one of its tools.
 4. It ranks candidates by match score and success rate.
 5. If nothing passes the threshold, it returns plain search results. If search returns many near-identical tools, it groups them by server and tags and asks which one the user means.
 
