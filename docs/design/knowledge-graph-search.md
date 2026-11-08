@@ -27,6 +27,18 @@ Today's search cannot do this:
 
 ## The graph
 
+The question "what tools serve this goal" is answered by a path, not a single record: goal to skills to tools, across servers. In a table that is a recursive join over four entity kinds; as a graph it is one bounded walk over typed edges. Two of the edge types connect a type to itself (a use case has a parent use case, a skill uses another skill), so the structure is a directed graph with cycles, not a tree. That is why it is modelled as a graph rather than a list or a hierarchy.
+
+```mermaid
+graph LR
+    SV[Server] -->|exposes| TL[Tool]
+    SK[Skill] -->|uses| TL
+    SK -->|uses| SK
+    UC[Use case] -->|includes| SK
+    UC -->|includes| TL
+    UC -->|has parent| UC
+```
+
 Four node types, three of them already stored:
 
 | Node | Source |
@@ -143,9 +155,40 @@ A failed sign-in marks that server unusable for that user and changes nothing el
 
 ## Storage
 
-At startup the registry builds the graph in memory from records it already has, and rebuilds it when a server, skill or use case changes. It adds three collections to the existing database: use cases, stored links with their counts, and resolutions.
+Nodes come from four places, and only one is new. Servers are the records behind `server_repository`, skills the records behind `skill_repository`, and tools are read from each server's tool list rather than stored in their own right. Use cases are the one new collection.
 
-There is no graph database and no cognee. A large organisation's graph, around 50,000 tools and a few million links, fits in tens of megabytes. DocumentDB supports `$graphLookup` only from 8.0.2, and Terraform and CDK deploy 5.0.0 (`terraform/aws-ecs/documentdb.tf:322`), so traversal runs in the registry process either way.
+Links divide into derived and stored. "Server exposes tool" is derived at startup from the server tool lists and never persisted, because the server record already implies it. "Skill uses tool" comes from each skill's `allowed_tools`. The three authored links (skill uses skill, use case includes skill or tool, use case has parent) live in a new links collection keyed by their two ends, each row carrying who made it and a success and failure count. Resolutions are a third new collection; aggregated, they move the counts on the links a resolution used.
+
+```mermaid
+flowchart LR
+    subgraph persisted [DocumentDB]
+        SRV[(server records)]
+        SKL[(skill records)]
+        UCS[(use cases - new)]
+        LNK[(links + counts - new)]
+        RES[(resolutions - new)]
+    end
+    subgraph memory [Registry process in memory]
+        G["Graph snapshot<br/>integer-id adjacency"]
+        IDX["Intent index<br/>use case + skill vectors"]
+    end
+    SRV -->|exposes edges| G
+    SKL -->|uses-tool from allowed_tools| G
+    UCS --> G
+    LNK -->|edges + counts| G
+    SKL --> IDX
+    UCS --> IDX
+    RES -.->|aggregated| LNK
+    G --> RT[resolve_task]
+    IDX --> RT
+    RES -.->|per-user overlay,<br/>read per request| RT
+```
+
+The in-memory representation is a hand-built integer-id adjacency structure, not a graph library. At the enterprise ceiling of about 50,000 tools and a few million links, a compact integer-id adjacency holds in tens to low hundreds of megabytes and traverses in a tight loop. A general graph library such as NetworkX would hold the same edges in roughly an order of magnitude more memory and run its generic traversal more slowly on the one hot path, so it earns nothing here. The structure stays behind `graph.py`, which lets a later swap to a graph library or engine happen without touching callers if the algorithmic roadmap (centrality-based ranking, decay) ever justifies one.
+
+Reads never take a lock, because an enterprise runs tens of thousands of users against one shared snapshot at once. A rebuild builds a fresh snapshot and swaps the module reference in one assignment, so a request sees the whole old graph or the whole new one, never a half-built mix. Live feedback never mutates that shared object: a report writes to the links and resolutions collections, and the shared counts fold into the snapshot at the next rebuild. Shared counts move slowly behind the three-user threshold, so folding them in on rebuild rather than in place stays accurate enough. A single user's own reports are a small, sparse overlay read from DocumentDB per request and applied on top of the shared ranking; the process never holds every user's overlay in memory.
+
+There is no graph database and no cognee. DocumentDB supports `$graphLookup` only from 8.0.2, and Terraform and CDK deploy 5.0.0 (`terraform/aws-ecs/documentdb.tf:322`), but the traversal is small and bounded, so it runs in the registry process either way.
 
 ## Modularity and standards
 
@@ -157,7 +200,7 @@ Switching `BRAIN_ENABLED` off must leave the registry behaving exactly as it doe
 |---|---|
 | `registry/brain/schemas.py` | Pydantic models for use cases, links, resolutions, and the request and response bodies |
 | `registry/brain/constants.py` | Hop limit, score prior, TTLs and other constants |
-| `registry/brain/graph.py` | The in-memory graph: build from plain records and traverse. No I/O |
+| `registry/brain/graph.py` | The in-memory graph: build the integer-id adjacency from plain records, swap snapshots, and traverse. No I/O |
 | `registry/brain/intent_index.py` | Embeddings matrix over use cases and skills, using the existing embeddings client |
 | `registry/brain/scoring.py` | Success-rate and ranking functions. No I/O |
 | `registry/brain/access.py` | The single adapter to `registry/services/visibility.py` and `filter_tools_for_user` |
@@ -178,7 +221,7 @@ The logic package follows `registry/egress_auth/`, whose routes also live in `re
 - `graph.py` and `scoring.py` take plain data and return plain data, so unit tests need no database or embeddings model.
 - All access decisions go through `access.py`, which calls the existing helpers. The brain never reimplements a visibility rule.
 - A storage interface exists because a second implementation is plausible (an in-memory one for tests). The brain adds no other interfaces until a second implementation is needed.
-- No new runtime dependency. The graph uses plain dictionaries, and the intent index uses the libraries already in `pyproject.toml`.
+- No new runtime dependency. The graph uses integer-id adjacency dictionaries built by hand rather than a graph library, and the intent index uses the libraries already in `pyproject.toml`.
 
 ### Standards
 
@@ -196,6 +239,7 @@ The repository's `AGENTS.md` applies in full. The parts this feature touches mos
 ## Security
 
 - The brain checks access on each node before following links from it, and never reports what it hid.
+- Access filtering at discovery is a ranking concern, not the enforcement boundary, so under concurrent load the brain may cache each user's visible set briefly. The cache holds only positive visibility, carries a short TTL (`BRAIN_ACCESS_CACHE_TTL_SECONDS`, default 60), and fails closed on a miss or error by computing fresh. The worst case is that a just-revoked tool stays visible in a plan for up to the TTL, and calling it still fails at the gateway.
 - The payload goes through the shared projection helpers and never includes credentials.
 - A resolution ID is 128 random bits, tied on the server to the caller, and expires after an hour. `report_resolution` rejects another caller's ID and accepts one report per source per resolution.
 - nginx rate-limits the feedback route at the edge with `limit_req`, never inside `/validate`.
@@ -235,6 +279,7 @@ Settings, all off or conservative by default:
 | `BRAIN_MIN_SCORE` | chosen on the tuning half in Phase 2 |
 | `BRAIN_RESOLUTION_TTL_MINUTES` | `60` |
 | `BRAIN_SHARED_MIN_USERS` | `3` |
+| `BRAIN_ACCESS_CACHE_TTL_SECONDS` | `60` |
 
 ## Later, only if v1 earns it
 
