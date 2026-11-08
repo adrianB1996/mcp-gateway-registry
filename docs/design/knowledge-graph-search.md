@@ -333,7 +333,7 @@ Settings, all off or conservative by default:
 1. **The newest nodes are always cold.** An enterprise adds skills and tools constantly, so there is never a moment when the graph is fully populated: every new tool and skill arrives with no learned edges and no use case. The direct skill match and the search fallback are permanent first responders, not a launch-phase crutch, and a learned edge pays off only for entities that have been around long enough to accrue one.
 2. **The outcome signal is thin.** Behavioural correlation supplies which tools ran, but whether the task actually succeeded still comes from a report or a user correction in v1, so learning is slow when neither arrives. The feedback page and user corrections matter most here, and reading tool responses for an automatic outcome is a later improvement.
 3. **The registry may see an agent instead of a person.** When an agent uses its own credentials, or mcpgw runs with a service token, personal ranking applies to that service identity.
-4. **The eval can flatter the brain.** The hidden half and the frontier confirmation run exist to stop that.
+4. **The eval can flatter the brain.** The hidden task half, the frontier confirmation run, and the integrity rule that the graph is authored blind to the task set exist to stop that.
 5. **Use case text can carry prompt injection.** The YARA scan catches known patterns, and admins review use cases before sharing them across the organisation.
 6. **Plans break when tools change.** The brain checks each tool in a candidate against the current tool list before returning it, and drops candidates that point at tools that no longer exist.
 
