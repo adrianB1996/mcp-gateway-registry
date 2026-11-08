@@ -52,13 +52,13 @@ Five link types:
 
 | Link | Where it comes from |
 |---|---|
-| server exposes tool | server tool lists, rebuilt at startup |
-| skill uses tool | `allowed_tools`, plus edits by users and admins |
+| server exposes tool | server tool lists, rebuilt on each snapshot |
+| skill uses tool | learned from observed tool calls (primary); `allowed_tools` as an optional seed where set |
 | skill uses skill | a declaration, or detection at registration (see below) |
 | use case includes skill or tool | users and admins |
 | use case has parent | users and admins, two or three levels deep |
 
-Every link except "server exposes tool" keeps who made it, a success count and a failure count in a stored links collection, keyed by its two ends. Rebuilding the graph at startup reattaches the counts.
+Every link except "server exposes tool" keeps its provenance (a person, or the learning loop), a success count and a failure count in a stored links collection, keyed by its two ends. Each rebuild reattaches the counts.
 
 ## Skills and use cases
 
@@ -136,12 +136,21 @@ note: str | None              up to 500 characters
 
 Rules:
 
-- A success or failure adds one to the counts on every link the resolution used.
+- A success or failure adds one to the counts on every link the resolution used, and can create a learned skill-to-tool link that did not exist (see Learned links).
 - `no_backend_account`, `missing_access` and `tool_error` change no counts, because the path was not at fault.
 - A user's correction replaces the agent's report for that resolution.
 - A link's score is its success rate with one success and one failure added up front, so a new link starts at 0.5 and a single report cannot swing it to 0 or 1.
 - A person's own reports change their ranking at once. Shared counts change only after three distinct users report the same way.
 - A feedback page in the registry lists the user's recent resolutions with a thumbs up or down, for people who can sign in to the registry.
+
+### Learned links
+
+Most skill-to-tool edges are not declared, they are learned, because the skill UI does not expose `allowed_tools`. The gateway already logs every `tools/call` with its tool name and caller (`registry/audit/mcp_logger.py`, and the `tool_metrics` the metrics service stores), so the edge comes from behaviour rather than from the agent's self-report:
+
+- A resolution returns a set of skills and tools. Within a short window the same caller's tool calls through the gateway are correlated to that resolution, and a succeeded outcome creates or strengthens a skill-to-tool edge for each skill that was in play and each tool that then ran.
+- The tools come from the gateway's own log, not from what the agent says it did, so a wrong or missing self-report cannot forge an edge.
+- A new learned edge starts below the traversal threshold and counts toward ranking only after `BRAIN_LEARNED_MIN_OBS` distinct resolutions confirm it, so one coincidental co-occurrence does not add a lasting edge.
+- Correlating by caller and time window is approximate when one caller runs overlapping tasks. The observation threshold absorbs that noise, and reading tool responses for an exact per-call outcome stays a later improvement.
 
 ### Backend accounts
 
@@ -157,7 +166,7 @@ A failed sign-in marks that server unusable for that user and changes nothing el
 
 Nodes come from four places, and only one is new. Servers are the records behind `server_repository`, skills the records behind `skill_repository`, and tools are read from each server's tool list rather than stored in their own right. Use cases are the one new collection.
 
-Links divide into derived and stored. "Server exposes tool" is derived at startup from the server tool lists and never persisted, because the server record already implies it. "Skill uses tool" comes from each skill's `allowed_tools`. The three authored links (skill uses skill, use case includes skill or tool, use case has parent) live in a new links collection keyed by their two ends, each row carrying who made it and a success and failure count. Resolutions are a third new collection; aggregated, they move the counts on the links a resolution used.
+Links divide into derived, declared and learned. "Server exposes tool" is derived from the server tool lists and never persisted, because the server record already implies it. "Skill uses tool" is mostly learned, not declared: the skill UI does not expose `allowed_tools`, so most skills carry none, and the edge is created from observed behaviour instead (see Learned links); where `allowed_tools` is set it seeds the edge as a weak prior. The authored links (skill uses skill, use case includes skill or tool, use case has parent) and every learned link live in a new links collection keyed by their two ends, each row carrying its provenance and a success and failure count. Resolutions are a third new collection; aggregated with the gateway call log, they create and strengthen the learned links.
 
 ```mermaid
 flowchart LR
@@ -168,17 +177,19 @@ flowchart LR
         LNK[(links + counts - new)]
         RES[(resolutions - new)]
     end
+    CALLS[(gateway tool-call log)]
     subgraph memory [Registry process in memory]
         G["Graph snapshot<br/>integer-id adjacency"]
         IDX["Intent index<br/>use case + skill vectors"]
     end
     SRV -->|exposes edges| G
-    SKL -->|uses-tool from allowed_tools| G
+    SKL -->|optional allowed_tools seed| G
     UCS --> G
     LNK -->|edges + counts| G
     SKL --> IDX
     UCS --> IDX
-    RES -.->|aggregated| LNK
+    CALLS -.->|observed use| LNK
+    RES -.->|outcome| LNK
     G --> RT[resolve_task]
     IDX --> RT
     RES -.->|per-user overlay,<br/>read per request| RT
@@ -187,6 +198,8 @@ flowchart LR
 The in-memory representation is a hand-built integer-id adjacency structure, not a graph library. At the enterprise ceiling of about 50,000 tools and a few million links, a compact integer-id adjacency holds in tens to low hundreds of megabytes and traverses in a tight loop. A general graph library such as NetworkX would hold the same edges in roughly an order of magnitude more memory and run its generic traversal more slowly on the one hot path, so it earns nothing here. The structure stays behind `graph.py`, which lets a later swap to a graph library or engine happen without touching callers if the algorithmic roadmap (centrality-based ranking, decay) ever justifies one.
 
 Reads never take a lock, because an enterprise runs tens of thousands of users against one shared snapshot at once. A rebuild builds a fresh snapshot and swaps the module reference in one assignment, so a request sees the whole old graph or the whole new one, never a half-built mix. Live feedback never mutates that shared object: a report writes to the links and resolutions collections, and the shared counts fold into the snapshot at the next rebuild. Shared counts move slowly behind the three-user threshold, so folding them in on rebuild rather than in place stays accurate enough. A single user's own reports are a small, sparse overlay read from DocumentDB per request and applied on top of the shared ranking; the process never holds every user's overlay in memory.
+
+Because an enterprise adds skills and tools constantly, the brain does not rebuild on each change. It marks the snapshot dirty and rebuilds on a short debounce, so a burst of registrations collapses into one swap. The integer-id map is rebuilt with each snapshot, and stable identity lives in the names and paths in the collections, so learned counts keyed by those endpoints survive the rebuild and the reassignment.
 
 There is no graph database and no cognee. DocumentDB supports `$graphLookup` only from 8.0.2, and Terraform and CDK deploy 5.0.0 (`terraform/aws-ecs/documentdb.tf:322`), but the traversal is small and bounded, so it runs in the registry process either way.
 
@@ -268,7 +281,7 @@ Every comparison reports a 95% confidence interval.
 |---|---|---|
 | 0 | The eval above | One command reproduces today's numbers |
 | 1 | Improved search: a vector per tool, skill bodies in the skill index, tool annotations kept (#1818) | Measured on every test; offered upstream |
-| 2 | Use cases, skill-to-skill links, the in-memory graph, `resolve_task`, `report_resolution`, the feedback page, sign-in records | Beats improved search at 50 colliding servers and on hidden tasks; p95 latency no worse than search |
+| 2 | Use cases, skill-to-skill links, learned skill-to-tool links from the gateway call log, the in-memory graph, `resolve_task`, `report_resolution`, the feedback page, sign-in records | Beats improved search at 50 colliding servers and on hidden tasks; p95 latency no worse than search |
 | 3 | Point `search_registry` at the brain for one release, then remove it | No lookup category scores worse than today |
 
 Settings, all off or conservative by default:
@@ -280,11 +293,12 @@ Settings, all off or conservative by default:
 | `BRAIN_RESOLUTION_TTL_MINUTES` | `60` |
 | `BRAIN_SHARED_MIN_USERS` | `3` |
 | `BRAIN_ACCESS_CACHE_TTL_SECONDS` | `60` |
+| `BRAIN_LEARNED_MIN_OBS` | `3` |
 
 ## Later, only if v1 earns it
 
 - LLM-suggested use cases, using Ollama, grounded in each server's context.
-- Learning use cases from repeated tool sequences in the audit log.
+- Learning whole use cases, not just skill-to-tool edges, from repeated tool sequences in the audit log.
 - Working out step order from tool inputs and outputs.
 - Reading tool responses so the gateway sees whether calls worked.
 - Per-group learning and decay of old counts.
@@ -293,8 +307,8 @@ Settings, all off or conservative by default:
 
 ## Risks
 
-1. **The graph starts nearly empty.** Skills rarely carry tool links, and use cases start at zero. Early on, most answers will come from skills matched directly or from the search fallback, so early gains will be slow.
-2. **Agents may skip `report_resolution` or claim success.** v1 learns only from reports, so learning is slow when compliance is low. The feedback page and user corrections matter most here.
+1. **The newest nodes are always cold.** An enterprise adds skills and tools constantly, so there is never a moment when the graph is fully populated: every new tool and skill arrives with no learned edges and no use case. The direct skill match and the search fallback are permanent first responders, not a launch-phase crutch, and a learned edge pays off only for entities that have been around long enough to accrue one.
+2. **The outcome signal is thin.** Behavioural correlation supplies which tools ran, but whether the task actually succeeded still comes from a report or a user correction in v1, so learning is slow when neither arrives. The feedback page and user corrections matter most here, and reading tool responses for an automatic outcome is a later improvement.
 3. **The registry may see an agent instead of a person.** When an agent uses its own credentials, or mcpgw runs with a service token, personal ranking applies to that service identity.
 4. **The eval can flatter the brain.** The hidden half and the frontier confirmation run exist to stop that.
 5. **Use case text can carry prompt injection.** The YARA scan catches known patterns, and admins review use cases before sharing them across the organisation.
