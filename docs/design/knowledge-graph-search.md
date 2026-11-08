@@ -102,7 +102,7 @@ How it answers:
 1. It embeds the task and ranks use cases and skills together by cosine similarity, held in memory. It runs plain search in parallel.
 2. It drops anything the caller cannot see, using the same per-entity checks search uses.
 3. It follows links from the best match, up to two hops counted as tools-from-goal so a skill-to-skill chain is one hop, and drops a candidate if the caller cannot see one of its tools.
-4. It ranks candidates by match score and success rate.
+4. It ranks candidates by match score and success rate. Today that is each candidate's own match plus its direct edge's success rate; best-path ranking across a multi-hop chain is the planned evolution as the graph grows dense (see Later).
 5. It always merges the graph candidates with the parallel search results rather than returning one or the other, so a skill or tool the graph cannot reach is never hidden by a confident graph match. If the graph adds nothing above the threshold the result is plain search (`lookup` or `none`); if search returns many near-identical tools it groups them by server and tags and asks which one the user means (`choice`).
 
 Payload:
@@ -161,6 +161,14 @@ Most skill-to-tool edges are not declared, they are learned, because the skill U
 - The tools come from the gateway's own log, not from what the agent says it did, so a wrong or missing self-report cannot forge an edge.
 - A new learned edge starts below the traversal threshold and counts toward ranking only after `BRAIN_LEARNED_MIN_OBS` distinct resolutions confirm it, so one coincidental co-occurrence does not add a lasting edge.
 - Correlating by caller and time window is approximate when one caller runs overlapping tasks. The observation threshold absorbs that noise, and reading tool responses for an exact per-call outcome stays a later improvement.
+
+The job that builds the edges runs in the background, never on the request path, and reads only metadata (caller, tool name, server, outcome, timestamp), never call arguments or response bodies:
+
+1. **Correlate** each tool call to a resolution, by a `resolution_id` carried on the call where the client can send one, otherwise by caller and a sliding time window.
+2. **Pair** the skills the resolution returned with the tools then called, tagged with the resolution's outcome.
+3. **Weight by association, not raw count.** A measure like pointwise mutual information corrects for base rates, so a globally popular tool is not linked to every skill it happens to follow.
+4. **Confirm** a candidate over `BRAIN_LEARNED_MIN_OBS` distinct resolutions before it becomes an edge, then keep its success and failure counts.
+5. **Write** the edges to the links collection; the in-memory graph picks them up on the next debounced rebuild.
 
 ### Backend accounts
 
@@ -316,6 +324,7 @@ Settings, all off or conservative by default:
 - Working out step order from tool inputs and outputs.
 - Reading tool responses so the gateway sees whether calls worked.
 - Per-group learning and decay of old counts.
+- Best-path ranking as the graph grows dense: run weighted shortest path on `-log(success rate)` edge weights, so the most reliable chain wins rather than the one with the fewest hops (minimising the sum of `-log(score)` maximises the product of success rates, and the weights stay non-negative). The integer-id adjacency already supports this behind `graph.py`; a tested algorithm (NetworkX or rustworkx) or a graph engine goes in at that seam, and the two-hop cap is raised for that query.
 - Agents as nodes, sharing with peer registries, and OKF import and export.
 - Asking the user for feedback directly through MCP elicitation.
 
