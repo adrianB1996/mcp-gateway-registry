@@ -213,7 +213,8 @@ The eval measures three setups: A (today's search), B (improved search) and C (t
 - **The task set** holds about 200 tasks written the way a user would say them, each with its correct tools. Half tune the system, and half stay hidden for final scoring.
 - **The lookup set** is the existing 100 queries in `tests/fixtures/search_dataset/`, used for the replacement gate.
 - **Scale** runs at 1,000 and 10,000 tools.
-- **Models:** retrieval scoring uses no LLM. Whole-task runs use a pinned local Ollama model at temperature 0. Each phase's final run repeats once on a frontier model, and that number decides if the two disagree.
+- **Models:** retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned by digest, at temperature 0 with an 8,192-token context. The 4-bit build takes about 5.2 GB, so with that context it fits a GPU with 8 GB of memory, such as an RTX 3070. `qwen3:4b` is the fallback for smaller GPUs. Each phase's final run repeats once on Claude Opus 5.5 (`claude-opus-5-5`). The most capable model is the hardest test for the brain, because a strong model picks well among many tools on its own. If the two runs disagree, the Opus number decides.
+- **Agent:** `agents/agent.py` supports Amazon Bedrock and Anthropic. The eval adds an Ollama provider through `langchain-ollama`, as a development dependency only, so the registry's runtime dependencies stay unchanged.
 
 Every comparison reports a 95% confidence interval.
 
@@ -254,7 +255,7 @@ Settings, all off or conservative by default:
 5. **Use case text can carry prompt injection.** The YARA scan catches known patterns, and admins review use cases before sharing them across the organisation.
 6. **Plans break when tools change.** The brain checks each tool in a candidate against the current tool list before returning it, and drops candidates that point at tools that no longer exist.
 
-## Open questions
+## Decisions
 
-- Is `resolve_task` the final tool name?
-- Which Ollama model runs the eval agent, and which frontier model runs the confirmation pass?
+- The tool name is `resolve_task`.
+- The eval agent runs `qwen3:8b` on Ollama, and the confirmation pass runs Claude Opus 5.5.
