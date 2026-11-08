@@ -81,6 +81,16 @@ matches use case  "Month-end close"
   includes tool   ledger.lock_period
 ```
 
+## Orphans
+
+Most skills and tools will carry no authored link and no learned edge for a long time, and every newly added one starts that way, so the design has to find an orphan, not only a well-connected node.
+
+- **An orphan skill is still found, because every skill is indexed as a goal on its own.** The intent index holds a vector per skill independent of its links, so "make a spreadsheet of these figures" matches the generate-excel skill whether or not anything points at it. Links only add reach to tools and related skills on top of that direct match.
+- **An orphan tool is found through search, not the graph.** Tools are deliberately not in the intent index, because tool text is what collides; an unlinked tool is reached by the per-tool vectors in search (Phase 1). Because `resolve_task` always merges the search arm into its result, an orphan tool is never hidden by a confident graph match, and a cluster of near-identical orphan tools falls to the `choice` grouping.
+- **Orphans shrink over time and can be curated.** A tool gains skill-to-tool edges as it is used (see Learned links), and an admin report lists the skills and tools with no use case and no learned edge so a person can link them. Seeding a new tool's links from its server's own context is a later improvement.
+
+The guarantee that makes this safe is that the brain is additive: nothing is less findable because the graph exists, because the search arm runs on every resolution and is always merged in.
+
 ## The tool: `resolve_task`
 
 Draft tool description:
@@ -93,7 +103,7 @@ How it answers:
 2. It drops anything the caller cannot see, using the same per-entity checks search uses.
 3. It follows links from the best match, up to two hops counted as tools-from-goal so a skill-to-skill chain is one hop, and drops a candidate if the caller cannot see one of its tools.
 4. It ranks candidates by match score and success rate.
-5. If nothing passes the threshold, it returns plain search results. If search returns many near-identical tools, it groups them by server and tags and asks which one the user means.
+5. It always merges the graph candidates with the parallel search results rather than returning one or the other, so a skill or tool the graph cannot reach is never hidden by a confident graph match. If the graph adds nothing above the threshold the result is plain search (`lookup` or `none`); if search returns many near-identical tools it groups them by server and tags and asks which one the user means (`choice`).
 
 Payload:
 
@@ -140,7 +150,7 @@ Rules:
 - `no_backend_account`, `missing_access` and `tool_error` change no counts, because the path was not at fault.
 - A user's correction replaces the agent's report for that resolution.
 - A link's score is its success rate with one success and one failure added up front, so a new link starts at 0.5 and a single report cannot swing it to 0 or 1.
-- A person's own reports change their ranking at once. Shared counts change only after three distinct users report the same way.
+- A person's own reports change their ranking at once. Shared counts change only after several distinct users report the same way. `BRAIN_SHARED_MIN_USERS` is a floor for a quiet link; for a high-traffic link the threshold scales with its traffic, so a handful of users cannot move what the whole organisation sees.
 - A feedback page in the registry lists the user's recent resolutions with a thumbs up or down, for people who can sign in to the registry.
 
 ### Learned links
@@ -270,12 +280,16 @@ The eval measures three setups: A (today's search), B (improved search) and C (t
 - **The task set** holds about 200 tasks written the way a user would say them, each with its correct tools. Half tune the system, and half stay hidden for final scoring.
 - **The lookup set** is the existing 100 queries in `tests/fixtures/search_dataset/`, used for the replacement gate.
 - **Scale** runs at 1,000 and 10,000 tools.
+- **Churn and learning** are measured over time, not at a single instant, because the core skill-to-tool edge is learned. The harness replays resolutions, adds and removes tools and skills mid-run, and reports how a node's retrieval quality moves with its age and its observation count, and how fast a new node becomes findable.
+- **Integrity:** the use cases and links the brain traverses are authored from the server and skill catalogue alone, by a procedure blind to the task set, so a win cannot come from an answer key written to match the tasks. The hidden task half guards phrasing, the frontier run guards model strength, and this guards the graph.
 - **Models:** retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned by digest, at temperature 0 with an 8,192-token context. The 4-bit build takes about 5.2 GB, so with that context it fits a GPU with 8 GB of memory, such as an RTX 3070. `qwen3:4b` is the fallback for smaller GPUs. Each phase's final run repeats once on Claude Opus 5.5 (`claude-opus-5-5`). The most capable model is the hardest test for the brain, because a strong model picks well among many tools on its own. If the two runs disagree, the Opus number decides.
 - **Agent:** `agents/agent.py` supports Amazon Bedrock and Anthropic. The eval adds an Ollama provider through `langchain-ollama`, as a development dependency only, so the registry's runtime dependencies stay unchanged.
 
 Every comparison reports a 95% confidence interval.
 
 ## Phases
+
+Phases 0 and 1 are the shippable slice and the MVP: the eval and improved search are independently valuable, upstreamable, and measurable against the existing benchmark, and they need none of the graph. Phase 2, the graph and the learning loop, is the differentiated bet and a fast-follow gated on Phase 1's numbers; the learning loop is the riskiest part of it and ships behind its own flag. Phase 3 runs only if Phase 2 clears its gate.
 
 | Phase | Work | Done when |
 |---|---|---|
