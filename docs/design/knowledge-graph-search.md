@@ -51,7 +51,6 @@ graph LR
     SV[Server] -->|exposes| TL[Tool]
     UC[Use case] -->|includes| SK[Skill]
     UC -->|includes| TL
-    UC -->|has parent| UC
     SK -.->|uses, where declared| TL
     SK -.->|uses, where declared| SK
 ```
@@ -63,15 +62,14 @@ Four node types, three of them already stored:
 | Server | existing server records |
 | Tool | existing server tool lists |
 | Skill | existing skill records |
-| Use case | new collection, filled from use and by admins |
+| Use case | new collection, filled from use |
 
-A use case is a goal that several people have pursued, with the skills and tools they used for it. It is the node that search matches against.
+A use case is a goal that several people have pursued, with the skills and tools they used for it. It is the node that search matches against. Nobody writes or approves one: the brain creates it from use, and it holds a vector and links and no text.
 
 | Link | Where it comes from |
 |---|---|
 | server exposes tool | server tool lists, rebuilt with each snapshot |
-| use case includes skill or tool | what callers used after searching for that goal, and edits by admins |
-| use case has parent | admins, two or three levels deep, for browsing |
+| use case includes skill or tool | what callers used after searching for that goal |
 | skill uses tool | `allowed_tools`, where a skill sets it |
 | skill uses skill | the `dependencies` field that #844 proposes |
 
@@ -79,7 +77,7 @@ The last two are rare today. The skill UI does not expose `allowed_tools`, skill
 
 Every "includes" link has a row in a stored links collection, keyed by its two ends. The row counts how often search showed the item for that goal, how often the caller chose it, and how often the task then succeeded or failed.
 
-The walk from a matched use case goes at most two hops, counted as tools reached from the goal. A run of declared skill-to-skill links counts as one hop, the walk never follows a parent link, and it skips nodes it has already visited.
+The walk from a matched use case goes at most two hops, counted as tools reached from the goal. A run of declared skill-to-skill links counts as one hop, and the walk skips nodes it has already visited.
 
 ## How `search_registry` answers
 
@@ -99,7 +97,8 @@ The request gains one optional argument, `previous`, described under Reporting s
     },
     {
       "scope": "shared",
-      "use_case": "Month-end close",
+      "use_case_id": "uc_41c7",
+      "users": 12,
       "skills": [{"name": "generate-excel", "path": "/skills/generate-excel"}],
       "tools": [{"route": "/files", "tool": "write_xlsx"}],
       "succeeded": 31,
@@ -155,14 +154,13 @@ search_id: str
 outcome: "succeeded" | "partial" | "failed"
 used: list[{route: str, tool: str, error: bool}] | None
 skills: list[str] | None
-goal: str | None        up to 120 characters, no names, IDs or customer data
 reason: "wrong_results" | "wrong_tool" | "no_backend_account" | "missing_access" | "tool_error" | "other" | None
 source: "agent" | "user"
 ```
 
 `previous` takes `search_id` and `outcome` only.
 
-The report asks for facts before judgement. For each tool, the agent says whether the call came back as an error, which it can read from the MCP result. `outcome` is the agent's view of the whole task, and the tool description tells it to say `succeeded` only when the tools returned what the task needed and the user did not object.
+The report asks for facts before judgement. For each tool, the agent says whether the call came back as an error, which it can read from the MCP result. `outcome` is the agent's view of the whole task, and the tool description tells it to say `succeeded` only when the tools returned what the task needed and the user did not object. The report has no free-text field, so an agent cannot put words into the brain.
 
 The brain does not take a report on trust:
 
@@ -172,7 +170,6 @@ The brain does not take a report on trust:
 - A user's thumbs replaces the agent's report for that search.
 - Reports carry different weight. A user's counts most, then an agent's failure, then an agent's success, because agents overstate success far more often than they invent failure. The eval sets the weights.
 - `no_backend_account`, `missing_access` and `tool_error` change no counts, because the choice of tool was not at fault.
-- `goal` is a short label that helps an admin name a use case later. It stays private to the caller, goes through the YARA scanner, and never appears in another user's results.
 
 When no report arrives, the brain falls back to what it saw. A skill load or tool calls after a search, with no repeat search, count as a weak success. A repeat search counts as a weak failure.
 
@@ -186,17 +183,25 @@ Personal memory needs no curation and no other users, and one user's history nev
 
 ### Shared use cases
 
-A daily job, run under a lease so one replica owns it (the pattern in `registry/repositories/documentdb/agent_batch_job_repository.py`), turns personal memory into shared use cases:
+Admins cannot write or approve use cases for other people, so shared use cases approve themselves. That is safe because of what a use case contains. It holds a vector, links to tools and skills that already exist in the registry, and counts. It holds no text that a person or an agent wrote, so nothing one user's agent says can reach another user's agent through it.
 
-1. It groups successful search records whose vectors are close and whose tools overlap.
-2. It scores each tool in a group by association. Pointwise mutual information corrects for how common a tool is, so a tool that everybody calls does not join every use case.
-3. A group that spans at least `BRAIN_SHARED_MIN_USERS` distinct users becomes a draft use case. The floor rises with traffic, so a handful of users cannot shape what a large organisation sees.
-4. An admin sees the draft with its tools, its skills, the number of users behind it and their `goal` labels, gives it a name and a description, and approves it. Admins can also write a use case from nothing.
-5. An approved use case enters the graph, and later searches match it under `"scope": "shared"`. Its links keep counting shown, chosen, succeeded and failed.
+A daily job, run under a lease so one replica owns it (the pattern in `registry/repositories/documentdb/agent_batch_job_repository.py`), turns personal memory into shared use cases. It retrieves before it creates, which is how it avoids duplicates:
+
+1. For each new successful search record, it looks up the nearest existing use cases by vector.
+2. If one is close and its tools overlap with the tools this caller used, the record joins that use case. The use case's vector moves toward the new one and its links gain the counts.
+3. If the nearest one is close but its tools differ, the record starts a second use case. The same words can mean two goals, such as a refund on Stripe and a refund on an in-house system, and each caller later sees the one whose tools they can reach.
+4. If nothing is close, the record starts a new use case.
+5. A tool joins a use case by association. Pointwise mutual information corrects for how common a tool is, so a tool that everybody calls does not join every use case.
+6. A use case becomes visible to others once at least `BRAIN_SHARED_MIN_USERS` distinct users have joined it. The floor rises with traffic, so a handful of users cannot shape what a large organisation sees. Until then it stays invisible.
+7. A second pass merges use cases whose vectors and tools have drifted together, and hides any that nobody has used for `BRAIN_USE_CASE_IDLE_DAYS` or whose success rate has fallen below search's own.
+
+Vector distance alone would merge goals that read alike and split one goal phrased two ways. Requiring the tools to overlap as well fixes both, and it needs no query text and no LLM. The eval sets both thresholds.
 
 Two rules keep the loop honest. A link's score is its success rate among the times a caller chose it, with one success and one failure added up front, so a new link starts at 0.5 and one report cannot move it to 0 or 1. Counting only the times it was chosen stops the top result from winning because it is shown most. Search results also stay in every answer, so a new tool can still be found and chosen.
 
-Step 3 closes an attack. A user who may register a remote server needs only the `register_service` permission (`registry/api/server_routes.py`). Without the distinct-user floor and the admin's approval, that user could register a server, search three times, call their own tool after each, report success, and place the tool in other users' results for a popular goal. Other users' agents would then read that tool's description and its output.
+With no reviewer, four things stand between one user and everyone else's results. The user floor means one account cannot make a use case visible. The audit check means a report cannot credit a tool the caller never called. Access filtering means a viewer only ever sees tools they could already find through search. A use case with a poor success rate hides itself. The attack these close is real: a user who may register a remote server needs only the `register_service` permission (`registry/api/server_routes.py`), and could otherwise register a server, search a few times, call their own tool, report success, and place it in other users' results for a popular goal.
+
+A user can dismiss a shared suggestion, which hides it for them and counts as a failure for its links.
 
 ## Backend accounts
 
@@ -215,7 +220,7 @@ Servers are the records behind `server_repository`, and skills are the records b
 | Collection | Holds | Kept for |
 |---|---|---|
 | searches | caller, query vector, items shown, items used, outcome | `BRAIN_SEARCH_RETENTION_DAYS` |
-| use cases | name, description, vector, parent, draft or approved | until deleted |
+| use cases | vector, distinct-user count, visible or hidden | until idle for `BRAIN_USE_CASE_IDLE_DAYS` |
 | links | the two ends and the shown, chosen, succeeded and failed counts | until an end is deleted |
 | graph version | one number | forever |
 
@@ -281,12 +286,12 @@ Switching `BRAIN_ENABLED` off must leave the registry behaving exactly as it doe
 | `registry/brain/scoring.py` | Success-rate, association and ranking functions. No I/O |
 | `registry/brain/access.py` | The single adapter to `registry/services/visibility.py` and `filter_tools_for_user` |
 | `registry/brain/repository.py` | Storage interface and the DocumentDB implementation for the new collections |
-| `registry/brain/learning.py` | The daily job: match audit records to searches, then group searches into draft use cases |
+| `registry/brain/learning.py` | The daily job: match audit records to searches, then join searches to use cases, merge and retire them |
 | `registry/brain/service.py` | Builds `worked_before` for a search and handles `report_outcome` |
 | `registry/brain/hooks.py` | `mark_graph_dirty()` and the search hook, both no-ops when the feature is off |
 | `registry/api/brain_routes.py` | FastAPI routes, registered only when the feature is on |
 | `servers/mcpgw/brain_tools.py` | `report_outcome`, registered only when the feature is on |
-| `frontend/src/pages/` and `frontend/src/components/brain/` | Feedback page, draft use case review and use case editor |
+| `frontend/src/pages/` and `frontend/src/components/brain/` | Feedback page, where a user sees and deletes their own history |
 | `scripts/brain_eval/` and `tests/fixtures/brain_eval/` | The eval harness, its frozen corpus and its ground truth |
 | `tests/unit/brain/` and `tests/integration/brain/` | Tests |
 
@@ -306,7 +311,7 @@ The repository's `AGENTS.md` applies in full. The parts this feature touches mos
 
 - Every request and response body is a Pydantic model with constraints in `Field(...)` and a `json_schema_extra` example.
 - Private helpers start with `_` and sit at the top of each file. Functions stay under 50 lines, take one parameter per line and use PEP 604 type hints. Public functions have Google-style docstrings.
-- Logging uses the standard configuration. The graph build logs its elapsed time and node and link counts. No log line contains query text, goal labels or tokens.
+- Logging uses the standard configuration. The graph build logs its elapsed time and node and link counts. No log line contains query text or tokens.
 - Errors use specific exception types. Access checks fail closed. If the brain fails, search returns its results without `worked_before`, because discovery is not an authorization decision.
 - Coroutines never block. Embedding runs off the event loop, as search already does.
 - New code reaches 80% test coverage. `uv run python scripts/test.py coverage -n 8`, `ruff`, `mypy` and `bandit` pass before each merge.
@@ -317,11 +322,10 @@ The repository's `AGENTS.md` applies in full. The parts this feature touches mos
 
 - The brain checks access on every item before it returns it, and never reports what it hid.
 - The gateway checks every tool call against the caller's token, so a wrong suggestion fails safely. Filtering at discovery only decides what the brain shows. Under load the brain may therefore cache each user's visible set for `BRAIN_ACCESS_CACHE_TTL_SECONDS`. The cache holds only what the user may see, and a miss or an error computes the answer fresh. A tool revoked a moment ago can appear in `worked_before` until the cache expires, and calling it still fails at the gateway.
-- One user's search history never appears in another user's results. Shared results come only from approved use cases.
+- One user's search history never appears in another user's results. Shared results come only from use cases that several users produced, and a use case holds no text.
 - A search ID is 128 random bits and is tied on the server to the caller. `report_outcome` rejects another caller's ID.
-- A use case reaches other users only after distinct users produce it and an admin approves it, and a caller with no user identity produces none.
+- A use case reaches other users only after distinct users produce it, and a caller with no user identity produces none. Nobody approves one by hand (see Shared use cases).
 - nginx rate-limits `report_outcome` at the edge with `limit_req`, never inside `/validate`.
-- The registry scans use case text and goal labels with its existing YARA scanner on every write.
 - The registry stores no query text. It stores each query's vector for `BRAIN_SEARCH_RETENTION_DAYS`, because the vector is the goal that learning attaches to. A vector reveals less than the text and more than nothing, so only the brain's own repository reads the searches collection, and a user can delete their history from the feedback page.
 - Each phase that touches routes, access or stored input gets a security review against `docs/SECURITY_GUIDELINES.md` before merge.
 
@@ -368,7 +372,8 @@ The brain learns nothing from a hand-written answer key. The harness runs the tu
 | Another user's goal | hidden tasks given to a simulated user who never ran that goal, while others did. Only arm D can help here, and this is the test of shared use cases |
 | Report rate | the tuning half replayed with agents reporting on all, half and none of their tasks, and with a share of reports wrong. The result says whether the brain works when agents stay silent, and how much reports add |
 | Churn | tools and skills join and leave during the replay. The report plots quality against a tool's age |
-| Poisoning | one simulated user tries to push a tool into other users' results and must fail |
+| Duplicates | many simulated users phrase one goal in different ways, and two goals share wording but use different backends. The first must end as one use case and the second as two |
+| Poisoning | one simulated user, then a pair, tries to push a tool into other users' results and must fail |
 
 All tests run at 1,000 and 10,000 tools. Every comparison reports a paired 95% confidence interval.
 
@@ -387,7 +392,7 @@ Each phase's final run repeats on Claude Opus 5.5 (`claude-opus-5-5`). A strong 
 | 0 | The deployment measurement, the frozen corpus, the harness | One command reproduces the baseline from the repository, and the measurement report exists |
 | 1 | Improved search: a vector per tool with server context, skill bodies in the skill index, tool annotations kept (#1818) | Measured on every test, and offered upstream |
 | 2 | Personal memory: `search_id`, search records, the matching half of the daily job, `report_outcome` and `previous`, `worked_before` for the caller's own history, the feedback page | Goals 1 to 4 hold for arm C |
-| 3 | Shared use cases, behind `BRAIN_SHARED_ENABLED`: the grouping half of the daily job, draft review and the editor, the graph snapshot with its version number | Arm D beats arm C on another user's goal, loses nothing elsewhere, and passes the poisoning test |
+| 3 | Shared use cases, behind `BRAIN_SHARED_ENABLED`: the joining, merging and retiring half of the daily job, the graph snapshot with its version number | Arm D beats arm C on another user's goal, loses nothing elsewhere, and passes the duplicates and poisoning tests |
 | 4 | `BRAIN_ENABLED` defaults to on | Goals 1 to 4 hold on the final Claude runs |
 
 Phases 0 and 1 are the first release. They help every user of search, need none of the brain, and can go upstream. Each later phase is built only if the one before it passed.
@@ -405,6 +410,7 @@ Settings, all off or conservative by default:
 | `BRAIN_REPORT_WINDOW_MINUTES` | `240` |
 | `BRAIN_INFERRED_MIN_OBS` | `2` |
 | `BRAIN_SHARED_MIN_USERS` | `3` |
+| `BRAIN_USE_CASE_IDLE_DAYS` | `90` |
 | `BRAIN_REBUILD_DEBOUNCE_SECONDS` | `30` |
 | `BRAIN_ACCESS_CACHE_TTL_SECONDS` | `60` |
 
@@ -416,7 +422,7 @@ Settings, all off or conservative by default:
 - Carrying the `search_id` in the `_meta` field of tool calls where an MCP client supports it, for exact matching.
 - Links between skills and tools learned from use ("loaded with", "called with"), once enough search records exist to tell a pattern from a coincidence.
 - Best-path ranking once the graph is dense. Weighted shortest path on `-log(success rate)` picks the chain with the highest combined success rate, and the weights stay non-negative. A tested algorithm (NetworkX or rustworkx) goes in behind `graph.py`, and that query gets a higher hop limit.
-- Use case drafts written by an LLM from a group's goal labels, for an admin to edit.
+- Display names for use cases, built from the names of their tools and skills, so people can browse them. Agents do not need a name.
 - Working out step order from tool inputs and outputs.
 - Per-group sharing and decay of old counts.
 - Agents as nodes, sharing with peer registries, and OKF import and export.
@@ -430,8 +436,8 @@ Settings, all off or conservative by default:
 5. The time-window match is approximate. A caller running two tasks at once produces wrong pairs, and the inferred-observation floor and the association score have to absorb them.
 6. Callers may have no user identity. With a shared service token the brain learns nothing from those callers and shows them shared use cases only.
 7. What ranks first gets chosen most. Scoring by success among the times chosen limits this, and plain search results stay in every answer so new tools are still found.
-8. Admins may not review drafts. Shared use cases then never appear, and the brain stays at personal memory, which still works.
-9. Goal labels, use case text and tool descriptions can carry prompt injection or customer data. Labels stay private, the YARA scan runs on every write, and admins approve what is shared.
+8. Nobody reviews a shared use case. A wrong one stays visible until its success rate falls or users dismiss it. The user floor, the audit check and automatic hiding are the only controls, and the poisoning test has to show they hold.
+9. Use cases can split or merge wrongly. Two thresholds decide, and a bad setting gives either many near-duplicates or one use case that mixes goals. The duplicates test sets them.
 10. Stored query vectors are a privacy cost. Retention is bounded, access is limited to the brain's repository, and users can delete their history.
 
 ## Decisions
@@ -440,7 +446,8 @@ Settings, all off or conservative by default:
 - The one new tool is `report_outcome`, and `search_registry` accepts the same report through `previous`.
 - The brain fills itself from use: the query is the goal, and the gateway's records show what was used.
 - Personal memory is built before shared use cases.
-- A use case becomes shared only after distinct users produce it and an admin approves it.
+- A use case approves itself: it becomes shared once enough distinct users produce it, and it holds no free text.
+- The learning job looks up similar use cases before creating one, and joins a search to an existing use case when the vectors are close and the tools overlap.
 - The brain never reorders or removes search results.
 - The shared graph is a hand-built adjacency structure in each registry process. There is no graph database.
 - The eval agent runs `qwen3:8b` on Ollama, and the confirmation pass runs Claude Opus 5.5.
