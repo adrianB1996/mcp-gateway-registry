@@ -2,7 +2,8 @@
 
 A plan for a registry that learns from its own use. Every search records the goal, the gateway sees which tools and skills the caller then used, and the next search for a similar goal gets those back as "worked before".
 
-- Status: Phase 0 in progress. The deployment measurement and the eval metrics are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md). The frozen corpus and the harness are next.
+- Status: Phase 0 in progress. The eval metrics and the pilot measurement script are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md). The frozen corpus and the harness are next.
+- Phase 0 to 3 run on a local Docker Compose stack with an 8 GB GPU. No deployment with real users exists yet, so the question of whether people repeat goals waits for the pilot (see Phases).
 - Written against commit `3128817` of this fork of `agentic-community/mcp-gateway-registry`. The work stays in the fork for now.
 - Code references were re-checked on 2026-11-11.
 
@@ -364,16 +365,16 @@ The repository's `AGENTS.md` applies in full. The parts this feature touches mos
 
 ## Eval
 
-### Measure the problem first
+### Measure the problem with real users
 
-The collision problem is an argument so far. Phase 0 checks it against the running deployment before anyone builds a fix, using data the registry already has:
+Two questions decide whether the brain is worth building, and only real traffic can answer them:
 
-- how many tool names more than one server exposes, and how many of those share a description;
+- how many tool names more than one server exposes in a real registry, and how many of those share a description;
 - from 7 days of audit records, how often a caller searches and then calls a tool, how often the same caller repeats a similar sequence, and the share of sessions that call tools on more than one server.
 
 `scripts/brain_eval/measure_deployment.py` produces both. The audit records hold no query text, so it counts a repeated goal as a repeated set of tools.
 
-The first number says how much Phase 1 has to fix. The second says whether people repeat goals often enough for memory to pay, and whether the time-window match finds anything in real traffic.
+No deployment with real users exists yet. A local stack only records the test team's own traffic, so the script runs in the pilot (see Phases) instead of in Phase 0. The simulated users in the eval can show that the brain helps when goals repeat. Only the pilot can show that real people repeat them.
 
 ### A frozen corpus
 
@@ -415,7 +416,7 @@ All tests run at 1,000 and 10,000 tools. Every comparison reports a paired 95% c
 
 ### Models
 
-Retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned by digest, at temperature 0 with an 8,192-token context. The 4-bit build takes about 5.2 GB, so with that context it fits a GPU with 8 GB of memory, such as an RTX 3070. `qwen3:4b` is the fallback for smaller GPUs.
+Retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned by digest, at temperature 0 with an 8,192-token context. The 4-bit build takes about 5.2 GB, so with that context it fits the team's 8 GB GPU. `qwen3:4b` is the fallback for smaller GPUs. The registry's embedding model runs on the CPU, so it does not compete with Ollama for GPU memory.
 
 Each phase's final run repeats on Claude Opus 5.5 (`claude-opus-5-5`). A strong model picks well among many tools without help, which makes it the harder test for the brain, and if the two models disagree the Opus number decides. Claude Fable 5.2 is more capable and costs twice as much per token. One run on it before the Phase 4 decision is a reasonable extra check. The report-rate test also records how often each model reports unprompted, since a model that ignores the `report` field changes what the brain can learn.
 
@@ -425,15 +426,18 @@ Each phase's final run repeats on Claude Opus 5.5 (`claude-opus-5-5`). A strong 
 
 | Phase | Work | Done when |
 |---|---|---|
-| 0 | The deployment measurement, the frozen corpus, the harness | One command reproduces the baseline from the repository, and the measurement report exists |
+| 0 | The frozen corpus, the fake MCP servers, the harness, on a local stack | One command reproduces the baseline from the repository |
 | 1 | Improved search: a vector per tool with server context, skill bodies in the skill index, tool annotations kept (#1818) | Measured on every test, and offered upstream |
 | 2 | Personal memory: `search_id`, search records, the matching half of the daily job, `report_outcome` and `previous`, `worked_before` for the caller's own history, the feedback page | Goals 1 to 4 hold for arm C |
 | 3 | Shared use cases, behind `BRAIN_SHARED_ENABLED`: the joining, merging and retiring half of the daily job, the graph snapshot with its version number, the use case editor and the reporting page | Arm D beats arm C on another user's goal, loses nothing elsewhere, and passes the duplicates, hand-made and poisoning tests |
-| 4 | `BRAIN_ENABLED` defaults to on | Goals 1 to 4 hold on the final Claude runs |
+| Pilot | A small group of real users works through the gateway for about two weeks with the brain off, and `measure_deployment.py` runs on their audit records | The report shows callers repeating tool sets, alone and across users |
+| 4 | `BRAIN_ENABLED` defaults to on | Goals 1 to 4 hold on the final Claude runs, and the pilot passed |
 
 Phases 0 and 1 are the first release. They help every user of search, need none of the brain, and can go upstream. Each later phase is built only if the one before it passed.
 
-Two results stop the work early. If improved search already leads the agent to the right tools on nine of ten hidden tasks, Phase 2 has no gap to close. If the deployment measurement shows that callers rarely repeat a goal, memory has nothing to remember, and Phase 2 waits until that changes. Backend accounts sit outside this sequence.
+Two results stop the work early. If improved search already leads the agent to the right tools on nine of ten hidden tasks, Phase 2 has no gap to close. If the pilot shows that callers rarely repeat a goal, memory has nothing to remember, and the brain stays off. Backend accounts sit outside this sequence.
+
+The pilot sits before Phase 4 only because no real users exist today. It needs nothing from Phases 2 and 3, so if a team can use the gateway sooner, run it before Phase 2. That order risks less work, because a pilot that fails stops the plan before the brain is built.
 
 Settings, all off or conservative by default:
 
@@ -465,7 +469,7 @@ Settings, all off or conservative by default:
 ## Risks
 
 1. Phase 1 may solve the problem. If server context in tool vectors is enough, the brain is never built. That outcome costs two phases and still improves search.
-2. People may not repeat goals. Memory pays only when the same user, or several users, pursue the same goal more than once. The deployment measurement checks this before Phase 2 starts.
+2. People may not repeat goals. Memory pays only when the same user, or several users, pursue the same goal more than once. Phases 0 to 3 run locally with simulated users, so this risk stays open until the pilot. Running the pilot early closes it soonest.
 3. Agents may not report, or may report success when they failed. The brain has to work on what the gateway sees alone, and the report-rate test checks that it does.
 4. "Called" is not "worked". Without a report, the brain knows a call was allowed and nothing more.
 5. The time-window match is approximate. A caller running two tasks at once produces wrong pairs, and the inferred-observation floor and the association score have to absorb them.

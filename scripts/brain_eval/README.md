@@ -4,13 +4,15 @@ Tooling for Phase 0 of the knowledge-graph search plan in [docs/design/knowledge
 
 | File | What it does |
 |---|---|
-| `measure_deployment.py` | Reads a running registry's tool lists and MCP audit records and writes a JSON report |
+| `measure_deployment.py` | Reads a running registry's tool lists and MCP audit records and writes a JSON report. It runs in the pilot, once real users exist |
 | `deployment_stats.py` | The analysis behind that report, with no I/O |
 | `metrics.py` | NDCG@10, recall@10, MRR, top-1 hits, task completion and a paired bootstrap interval, shared by every eval arm |
 
 The frozen synthetic corpus and the harness that runs each arm against it come next.
 
 ## Measuring a deployment
+
+The design runs this in the pilot, on real users' traffic. Against a local stack it only describes your own test calls, which is useful to check the script works and says nothing about real usage.
 
 ```bash
 # Inside a registry container, where the registry environment is complete
