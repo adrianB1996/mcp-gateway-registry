@@ -2,7 +2,7 @@
 
 A plan for a registry that learns from its own use. Every search records the goal, the gateway sees which tools and skills the caller then used, and the next search for a similar goal gets those back as "worked before".
 
-- Status: proposal. Nothing is built.
+- Status: Phase 0 in progress. The deployment measurement and the eval metrics are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md). The frozen corpus and the harness are next.
 - Written against commit `3128817` of this fork of `agentic-community/mcp-gateway-registry`. The work stays in the fork for now.
 - Code references were re-checked on 2026-11-11.
 
@@ -370,6 +370,8 @@ The collision problem is an argument so far. Phase 0 checks it against the runni
 
 - how many tool names more than one server exposes, and how many of those share a description;
 - from 7 days of audit records, how often a caller searches and then calls a tool, how often the same caller repeats a similar sequence, and the share of sessions that call tools on more than one server.
+
+`scripts/brain_eval/measure_deployment.py` produces both. The audit records hold no query text, so it counts a repeated goal as a repeated set of tools.
 
 The first number says how much Phase 1 has to fix. The second says whether people repeat goals often enough for memory to pay, and whether the time-window match finds anything in real traffic.
 
