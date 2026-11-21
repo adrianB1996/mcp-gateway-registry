@@ -1,0 +1,153 @@
+domain: workspace
+# Shared utilities every team uses, and goals that cross domains. The cross-domain
+# goals are the "goal that needs several tools" case in the design, where a goal
+# links tools on servers that search would never return together.
+servers:
+  - name: filestore
+    title: FileStore
+    description: Shared document storage. Creates spreadsheets and documents and reads uploaded files.
+    tags: [files, documents, spreadsheets]
+    item_noun: file
+    generic_tools: false
+    tools:
+      - name: write_xlsx
+        description: Create an Excel spreadsheet from rows of tabular data.
+        params: {filename: string, rows: array}
+        read_only: false
+      - name: write_docx
+        description: Create a Word document from headings and paragraphs.
+        params: {filename: string, content: string}
+        read_only: false
+      - name: read_csv
+        description: Read rows from an uploaded CSV file.
+        params: {file_id: string}
+      - name: share_file
+        description: Share a file with people by email, as viewer or editor.
+        params: {file_id: string, emails: array, role: string}
+        read_only: false
+  - name: messenger
+    title: Messenger
+    description: Company email and chat. Sends emails and posts messages to team channels.
+    tags: [email, chat, notifications]
+    item_noun: message
+    generic_tools: false
+    tools:
+      - name: send_email
+        description: Send an email to one or more people, optionally with an attached file.
+        params: {to: array, subject: string, body: string}
+        read_only: false
+      - name: post_to_channel
+        description: Post a message to a team chat channel.
+        params: {channel: string, text: string}
+        read_only: false
+      - name: schedule_meeting
+        description: Book a calendar meeting with attendees at a time.
+        params: {title: string, attendees: array, start_time: string}
+        read_only: false
+skills:
+  - name: generate-excel
+    description: Turn tabular results into a formatted Excel spreadsheet and share it.
+    body: |
+      # Generate Excel
+      Collect the rows, give each column a header, write the spreadsheet, and share it with
+      the people who asked for it.
+    tools: [filestore/write_xlsx, filestore/share_file]
+  - name: status-update
+    description: How to write a short status update and post it to the right team channel.
+    body: |
+      # Status update
+      Three lines: what happened, what is next, what you need. Post it in the team channel
+      and email anyone outside the team who is waiting on it.
+    tools: [messenger/post_to_channel, messenger/send_email]
+goals:
+  - id: ws-close-report
+    summary: Close the month and send finance a spreadsheet
+    tools: [ledgerline/trial_balance, filestore/write_xlsx, messenger/send_email]
+    skills: [generate-excel]
+    phrasings:
+      - Pull October's trial balance into a spreadsheet and email it to the CFO.
+      - Send the controller an Excel file with last month's trial balance.
+      - Make a spreadsheet of the period-end TB and mail it to finance-leads.
+  - id: ws-pipeline-sheet
+    summary: Export the pipeline to a spreadsheet for leadership
+    tools: [dealflow/list_open_opportunities, filestore/write_xlsx, filestore/share_file]
+    skills: [generate-excel]
+    phrasings:
+      - Put the EMEA open pipeline in a spreadsheet and share it with the VP of sales.
+      - Build an Excel of all open deals for the board pack and share it with the CEO.
+      - Export my open opportunities to a spreadsheet and give my manager edit access.
+  - id: ws-incident-update
+    summary: Declare an incident and tell the company
+    tools: [deploytrack/open_incident, messenger/post_to_channel]
+    skills: [status-update]
+    phrasings:
+      - Payments are down. Open a sev1 and post an update in the incidents channel.
+      - Declare an incident for the search outage and let the support channel know.
+      - Raise a sev2 for slow logins and tell the status channel what's happening.
+  - id: ws-new-hire-kit
+    summary: Prepare for a new hire's first day
+    tools: [peoplehub/get_employee, assetvault/assign_device, messenger/send_email]
+    skills: [new-hire-onboarding]
+    phrasings:
+      - Nina Patel starts Monday. Get her a laptop and email her manager the first-day plan.
+      - Set up new starter E-9120 with a laptop and let their manager know it's ready.
+      - We have a new engineer joining next week. Order their kit and send the welcome email.
+  - id: ws-late-delivery-customer
+    summary: Chase a late delivery and update the customer
+    tools: [shipright/track_shipment, helpline/reply_to_case]
+    skills: [late-shipment-followup]
+    phrasings:
+      - Case CS-7712 is about a late parcel, tracking 1Z55. Find out where it is and update the customer.
+      - A customer on case 4410 is asking where their order is. Track shipment SHP-998 and reply to them.
+      - Check the delivery for case CS-2001's order and tell the customer when it'll arrive.
+  - id: ws-renewal-brief
+    summary: Brief the account owner on an upcoming renewal
+    tools: [contractvault/upcoming_renewals, dealflow/get_account, messenger/send_email]
+    phrasings:
+      - Find customer contracts renewing next month and email each account owner a heads-up.
+      - Which customers renew in the next 30 days? Tell their account managers.
+      - Let the sales owners know about any contracts up for renewal before December.
+  - id: ws-campaign-report
+    summary: Report campaign results to the team
+    tools: [campaignhub/campaign_performance, filestore/write_docx, messenger/post_to_channel]
+    skills: [campaign-retro]
+    phrasings:
+      - Write up how the November newsletter did in a doc and post it in the marketing channel.
+      - Make a short report on campaign CMP-2291's results and share it with the team chat.
+      - Summarise the winback campaign performance in a document and tell the channel.
+  - id: ws-stock-alert
+    summary: Warn the team about low stock and order more
+    tools: [stockroom/items_below_reorder_point, stockroom/create_purchase_order, messenger/post_to_channel]
+    skills: [restock-low-inventory]
+    phrasings:
+      - Order more of anything low in Leeds and post the list in the ops channel.
+      - Restock items under their reorder point and let the warehouse channel know what's coming.
+      - Find low-stock items, raise purchase orders and tell the ops team.
+lookups:
+  - query: create an Excel spreadsheet
+    category: tool-capability
+    expect: [filestore/write_xlsx]
+  - query: send an email with an attachment
+    category: tool-capability
+    expect: [messenger/send_email]
+  - query: post a message in a team channel
+    category: tool-capability
+    expect: [messenger/post_to_channel]
+  - query: shared document storage
+    category: server-purpose
+    expect: [/filestore]
+  - query: company email and chat
+    category: server-purpose
+    expect: [/messenger]
+  - query: make spreadsheets and documents
+    category: server-purpose
+    expect: [/filestore]
+  - query: turn results into a spreadsheet
+    category: skill
+    expect: [generate-excel]
+  - query: write a status update for the team
+    category: skill
+    expect: [status-update]
+  - query: share an Excel report
+    category: skill
+    expect: [generate-excel]

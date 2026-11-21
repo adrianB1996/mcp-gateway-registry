@@ -7,8 +7,41 @@ Tooling for Phase 0 of the knowledge-graph search plan in [docs/design/knowledge
 | `measure_deployment.py` | Reads a running registry's tool lists and MCP audit records and writes a JSON report. It runs in the pilot, once real users exist |
 | `deployment_stats.py` | The analysis behind that report, with no I/O |
 | `metrics.py` | NDCG@10, recall@10, MRR, top-1 hits, task completion and a paired bootstrap interval, shared by every eval arm |
+| `corpus.py` | Builds the frozen corpus from the domain files: generic colliding tools, tasks, lookups, collision cases and filler servers |
+| `build_corpus.py` | Writes `tests/fixtures/brain_eval/corpus.json` and `manifest.json`, and checks they are up to date |
 
-The frozen synthetic corpus and the harness that runs each arm against it come next.
+The fake MCP servers and the harness that runs each arm against the corpus come next.
+
+## The corpus
+
+The corpus lives in `tests/fixtures/brain_eval/`. The hand-written part is in `domains/`, one YAML file per business domain. Each file defines its servers and their tools, its skills, its goals with three phrasings each, and lookup queries with their expected answers. Tasks come from the goals, so each task's correct tools are the tools its goal lists.
+
+The builder adds what is better generated than written:
+
+- every domain server gets `get_item`, `list_items` and `search` with identical descriptions, so only server context tells them apart;
+- each phrasing of a goal becomes a task. Every third goal stays entirely in the hidden half, and the other goals put two phrasings in the tuning half and one in the hidden half;
+- the two billing servers expose the same tools, and their goals produce one task per user group with different correct tools, for the same-domain collision test;
+- a tool-name lookup for every tool whose name is unique, and a `get_item` and `search` collision case for every domain server;
+- filler servers that pad the corpus to 1,000 or 10,000 tools. No task or lookup ever expects a filler tool.
+
+| Part | Count |
+|---|---|
+| Domain servers | 22 |
+| Tools before padding | 167 |
+| Skills | 22 |
+| Goals | 68 |
+| Tasks (tuning, hidden) | 98, 124 |
+| Lookups (tool capability, server purpose, skill, tool name) | 33, 33, 33, 97 |
+| Collision cases | 40 |
+
+After editing a domain file, rebuild and commit both files:
+
+```bash
+uv run python scripts/brain_eval/build_corpus.py
+uv run python scripts/brain_eval/build_corpus.py --scale 1000 --scale 10000 --padded-dir /tmp/brain-eval
+```
+
+The padded corpora are not committed. The builder makes the same files from the same seed, and `manifest.json` records their SHA-256 so a run can show it used the same corpus. A unit test fails when `corpus.json` or `manifest.json` no longer matches the domain files.
 
 ## Measuring a deployment
 

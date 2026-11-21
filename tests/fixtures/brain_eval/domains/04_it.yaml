@@ -1,0 +1,139 @@
+domain: it
+servers:
+  - name: servicedesk
+    title: ServiceDesk IT
+    description: IT service management. Employees raise tickets for access, hardware and software problems.
+    tags: [it, tickets, service-management]
+    item_noun: IT ticket
+    tools:
+      - name: create_ticket
+        description: Open an IT ticket with a category, priority and description of the problem.
+        params: {summary: string, category: string, priority: string}
+        read_only: false
+      - name: get_ticket
+        description: Get an IT ticket with its status, assignee and comments.
+        params: {ticket_id: string}
+      - name: assign_ticket
+        description: Assign an IT ticket to an engineer or support group.
+        params: {ticket_id: string, assignee: string}
+        read_only: false
+      - name: close_ticket
+        description: Resolve and close an IT ticket with a resolution note.
+        params: {ticket_id: string, resolution: string}
+        read_only: false
+      - name: grant_app_access
+        description: Grant a user access to a business application with a given role.
+        params: {user_id: string, application: string, role: string}
+        read_only: false
+  - name: assetvault
+    title: AssetVault
+    description: Hardware asset inventory. Laptops, monitors and phones, who has them, and warranty status.
+    tags: [it, assets, hardware]
+    item_noun: device
+    tools:
+      - name: list_devices_for_user
+        description: List the laptops, phones and other devices assigned to a person.
+        params: {user_id: string}
+      - name: assign_device
+        description: Assign a device from stock to a person.
+        params: {device_type: string, user_id: string}
+        read_only: false
+      - name: return_device
+        description: Record that a device was returned to IT and put it back in stock.
+        params: {device_id: string}
+        read_only: false
+      - name: warranty_status
+        description: Check whether a device is still under warranty and when it expires.
+        params: {device_id: string}
+      - name: devices_due_refresh
+        description: List devices older than the refresh age that are due to be replaced.
+        params: {older_than_months: integer}
+skills:
+  - name: offboard-employee
+    description: Steps for IT when an employee leaves, from revoking access to collecting their laptop.
+    body: |
+      # Offboarding
+      List the leaver's devices and raise a ticket to revoke their application access.
+      Book the laptop and phone return for their last day and mark them returned once
+      they arrive.
+    tools: [assetvault/list_devices_for_user, servicedesk/create_ticket, assetvault/return_device]
+  - name: laptop-replacement
+    description: How to replace a broken or out-of-warranty laptop.
+    body: |
+      # Laptop replacement
+      Check the warranty first. In warranty, send it for repair. Out of warranty, assign a
+      new laptop from stock and return the old one.
+    tools: [assetvault/warranty_status, assetvault/assign_device, assetvault/return_device]
+goals:
+  - id: it-request-access
+    summary: Get someone access to an application
+    tools: [servicedesk/grant_app_access]
+    phrasings:
+      - Give Maria read access to the analytics dashboard app.
+      - New joiner U-7781 needs editor rights in the design tool.
+      - Can you set up admin access to the CRM for Kevin?
+  - id: it-report-problem
+    summary: Report an IT problem
+    tools: [servicedesk/create_ticket]
+    phrasings:
+      - My VPN keeps dropping every ten minutes. Raise it with IT.
+      - Log a ticket, the printer on floor three is jammed again.
+      - Open a high-priority ticket, the sales team can't reach the shared drive.
+  - id: it-ticket-status
+    summary: Check on a ticket
+    tools: [servicedesk/get_ticket]
+    phrasings:
+      - What's happening with ticket IT-40122?
+      - Has anyone picked up my laptop ticket from Monday?
+      - Status of INC-3381 please.
+  - id: it-laptop-replace
+    summary: Replace a broken laptop
+    tools: [assetvault/warranty_status, assetvault/assign_device, assetvault/return_device]
+    skills: [laptop-replacement]
+    phrasings:
+      - Laptop LT-2290's screen died. Swap it for a new one if it's out of warranty.
+      - Ana's laptop won't boot. Get her a replacement and take back the old one.
+      - Replace device LT-1107, it's three years old and the battery is dead.
+  - id: it-offboard
+    summary: Handle IT offboarding for a leaver
+    tools: [assetvault/list_devices_for_user, servicedesk/create_ticket, assetvault/return_device]
+    skills: [offboard-employee]
+    phrasings:
+      - Chris Doyle leaves on Friday. Sort out the IT side of his exit.
+      - Offboard user U-3302 from IT, last day is the 28th.
+      - Someone in finance is leaving next week. Revoke their access and get their kit back.
+  - id: it-refresh-plan
+    summary: Plan the hardware refresh
+    tools: [assetvault/devices_due_refresh]
+    phrasings:
+      - Which laptops are due for replacement this year?
+      - List every device older than four years.
+      - How many machines need refreshing in the next budget cycle?
+lookups:
+  - query: open a support ticket
+    category: tool-capability
+    expect: [servicedesk/create_ticket]
+  - query: give a user access to an application
+    category: tool-capability
+    expect: [servicedesk/grant_app_access]
+  - query: is this laptop under warranty
+    category: tool-capability
+    expect: [assetvault/warranty_status]
+  - query: IT ticketing system
+    category: server-purpose
+    expect: [/servicedesk]
+  - query: hardware inventory of laptops and phones
+    category: server-purpose
+    expect: [/assetvault]
+  - query: who has which device
+    category: server-purpose
+    expect: [/assetvault]
+  - query: what IT does when someone leaves
+    category: skill
+    expect: [offboard-employee]
+  - query: replace a broken laptop
+    category: skill
+    expect: [laptop-replacement]
+  - query: revoke access and collect equipment from a leaver
+    category: skill
+    expect: [offboard-employee]

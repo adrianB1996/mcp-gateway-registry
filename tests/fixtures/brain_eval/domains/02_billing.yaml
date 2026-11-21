@@ -1,0 +1,155 @@
+domain: billing
+# Two billing backends with the same tools. The EMEA team uses Paystream and the
+# Americas team uses Billright, so a refund request is only answerable by knowing
+# who asks. Task text never names the backend.
+servers:
+  - name: paystream
+    title: Paystream Billing
+    description: Payments and invoicing platform. Takes card payments, issues invoices and handles refunds and disputes.
+    tags: [billing, payments, invoices]
+    item_noun: payment
+    group: emea
+    tools:
+      - name: refund_payment
+        description: Refund all or part of a captured payment back to the customer.
+        params: {payment_id: string, amount: number, reason: string}
+        read_only: false
+      - name: get_invoice
+        description: Get an invoice with its line items, totals and payment status.
+        params: {invoice_id: string}
+      - name: list_customer_charges
+        description: List the charges made to a customer over a date range.
+        params: {customer_id: string, start_date: string, end_date: string}
+      - name: void_invoice
+        description: Void an unpaid invoice so the customer is no longer asked to pay it.
+        params: {invoice_id: string}
+        read_only: false
+      - name: list_disputes
+        description: List open chargeback disputes with their deadlines.
+        params: {status: string}
+  - name: billright
+    title: Billright
+    description: Billing system for subscriptions and one-off payments. Manages invoices, refunds and chargebacks.
+    tags: [billing, payments, subscriptions]
+    item_noun: charge
+    group: amer
+    tools:
+      - name: refund_payment
+        description: Refund a payment in full or in part.
+        params: {payment_id: string, amount: number, reason: string}
+        read_only: false
+      - name: get_invoice
+        description: Fetch an invoice, its lines and whether it has been paid.
+        params: {invoice_id: string}
+      - name: list_customer_charges
+        description: List a customer's charges between two dates.
+        params: {customer_id: string, start_date: string, end_date: string}
+      - name: void_invoice
+        description: Void an open invoice.
+        params: {invoice_id: string}
+        read_only: false
+      - name: list_disputes
+        description: List chargebacks that are still open and when evidence is due.
+        params: {status: string}
+skills:
+  - name: refund-a-customer
+    description: Policy and steps for refunding a customer, including partial refunds and duplicate charges.
+    body: |
+      # Refund a customer
+      Find the customer's charges for the period. Confirm the duplicate or disputed charge
+      with the customer. Refund only the duplicated amount, give a reason, and note the
+      refund on the ticket. Refunds over 5,000 need a manager's approval first.
+    tools: [paystream/list_customer_charges, paystream/refund_payment, billright/list_customer_charges, billright/refund_payment]
+  - name: chargeback-response
+    description: How to answer a chargeback dispute before its evidence deadline.
+    body: |
+      # Chargeback response
+      List open disputes and sort by deadline. For each, pull the invoice and the customer's
+      charges, attach proof of delivery, and submit before the deadline.
+    tools: [paystream/list_disputes, paystream/get_invoice, billright/list_disputes, billright/get_invoice]
+goals:
+  - id: bill-refund-duplicate
+    summary: Refund a duplicate charge
+    tools_by_group:
+      emea: [paystream/list_customer_charges, paystream/refund_payment]
+      amer: [billright/list_customer_charges, billright/refund_payment]
+    skills: [refund-a-customer]
+    phrasings:
+      - Customer C-2291 was charged twice on 3 November. Refund the duplicate.
+      - Refund the second charge Acme Ltd got hit with last week.
+      - A customer says we billed them twice for the same order. Sort out a refund.
+  - id: bill-check-invoice
+    summary: Check whether an invoice has been paid
+    tools_by_group:
+      emea: [paystream/get_invoice]
+      amer: [billright/get_invoice]
+    phrasings:
+      - Has invoice INV-88213 been paid?
+      - What's on invoice 40177 and is it settled?
+      - Check the payment status of the invoice we sent Northwind in October.
+  - id: bill-void-invoice
+    summary: Void an invoice sent in error
+    tools_by_group:
+      emea: [paystream/void_invoice]
+      amer: [billright/void_invoice]
+    phrasings:
+      - We sent invoice INV-90012 by mistake. Cancel it.
+      - Void the unpaid invoice 40211, it was raised against the wrong customer.
+      - Please kill the duplicate invoice we issued to Contoso yesterday.
+  - id: bill-chargebacks-due
+    summary: See which chargebacks are due soon
+    tools_by_group:
+      emea: [paystream/list_disputes]
+      amer: [billright/list_disputes]
+    skills: [chargeback-response]
+    phrasings:
+      - Which chargebacks do we need to respond to this week?
+      - List the open disputes and their evidence deadlines.
+      - Are there any card disputes about to expire?
+  - id: bill-customer-history
+    summary: Review a customer's charges
+    tools_by_group:
+      emea: [paystream/list_customer_charges]
+      amer: [billright/list_customer_charges]
+    phrasings:
+      - Show me everything we charged customer C-1180 this year.
+      - What has Fabrikam paid us since July?
+      - List the charges on account 55120 for the last 90 days.
+  - id: bill-partial-refund
+    summary: Give a partial refund
+    tools_by_group:
+      emea: [paystream/refund_payment]
+      amer: [billright/refund_payment]
+    skills: [refund-a-customer]
+    phrasings:
+      - Refund 30 of payment PAY-7713 as a goodwill gesture.
+      - Give the customer back half of their last payment, the service was down for two weeks.
+      - Issue a 15 percent refund on payment 99201 for the late delivery.
+lookups:
+  - query: refund a card payment
+    category: tool-capability
+    expect: [paystream/refund_payment, billright/refund_payment]
+  - query: cancel an invoice that was sent by mistake
+    category: tool-capability
+    expect: [paystream/void_invoice, billright/void_invoice]
+  - query: open chargeback disputes and their deadlines
+    category: tool-capability
+    expect: [paystream/list_disputes, billright/list_disputes]
+  - query: payments platform for invoices and refunds
+    category: server-purpose
+    expect: [/paystream, /billright]
+  - query: subscription billing system
+    category: server-purpose
+    expect: [/billright, /paystream:1]
+  - query: card payments and disputes
+    category: server-purpose
+    expect: [/paystream, /billright:1]
+  - query: refund policy and steps
+    category: skill
+    expect: [refund-a-customer]
+  - query: respond to a chargeback
+    category: skill
+    expect: [chargeback-response]
+  - query: customer was billed twice what do I do
+    category: skill
+    expect: [refund-a-customer]

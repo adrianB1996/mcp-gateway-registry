@@ -1,0 +1,138 @@
+domain: finance
+servers:
+  - name: ledgerline
+    title: Ledgerline General Ledger
+    description: General ledger for the finance team. Holds journal entries, account balances and accounting periods.
+    tags: [finance, accounting, ledger]
+    item_noun: journal entry
+    tools:
+      - name: list_journal_entries
+        description: List journal entries for an account and accounting period.
+        params: {account: string, period: string}
+      - name: post_adjustment
+        description: Post an adjusting journal entry that moves an amount between two accounts.
+        params: {debit_account: string, credit_account: string, amount: number, memo: string}
+        read_only: false
+      - name: get_account_balance
+        description: Get the closing balance of a ledger account for a period.
+        params: {account: string, period: string}
+      - name: lock_period
+        description: Lock an accounting period so no further entries can be posted to it.
+        params: {period: string}
+        read_only: false
+      - name: trial_balance
+        description: Produce a trial balance listing every account's debit and credit totals for a period.
+        params: {period: string}
+  - name: closeboard
+    title: Closeboard
+    description: Month-end close workspace. Tracks close checklists and matches bank statement lines to ledger entries.
+    tags: [finance, close, reconciliation]
+    item_noun: close task
+    tools:
+      - name: reconcile_account
+        description: Match a bank account's statement lines against ledger entries and report unmatched lines.
+        params: {account: string, period: string}
+      - name: list_unmatched_lines
+        description: List bank statement lines that have no matching ledger entry.
+        params: {account: string, period: string}
+      - name: get_close_checklist
+        description: Get the month-end close checklist for a period with each task's owner and status.
+        params: {period: string}
+      - name: complete_close_task
+        description: Mark a task on the month-end close checklist as done.
+        params: {task_id: string}
+        read_only: false
+      - name: accrual_report
+        description: List open accruals for a period with their amounts and reversal dates.
+        params: {period: string}
+skills:
+  - name: month-end-close
+    description: Step-by-step month-end close for the finance team, from reconciliation to locking the period.
+    body: |
+      # Month-end close
+      1. Reconcile every bank account for the period and clear unmatched lines.
+      2. Review open accruals and post any adjusting entries.
+      3. Run a trial balance and confirm debits equal credits.
+      4. Tick off the close checklist, then lock the period.
+    tools: [closeboard/reconcile_account, closeboard/accrual_report, ledgerline/post_adjustment, ledgerline/trial_balance, ledgerline/lock_period]
+  - name: bank-reconciliation
+    description: How to reconcile a bank statement against the general ledger and resolve differences.
+    body: |
+      # Bank reconciliation
+      Pull the statement lines that do not match a ledger entry. For each one, find the
+      missing or wrong entry, post an adjustment if needed, and rerun the match until the
+      unmatched list is empty.
+    tools: [closeboard/list_unmatched_lines, closeboard/reconcile_account, ledgerline/post_adjustment]
+goals:
+  - id: fin-close-month
+    summary: Close the books for a month
+    tools: [closeboard/reconcile_account, ledgerline/trial_balance, ledgerline/lock_period]
+    skills: [month-end-close]
+    phrasings:
+      - Close the books for October.
+      - We need to finish month-end for September and lock it down so nobody posts into it.
+      - Can you run the month-end close for last month?
+  - id: fin-reconcile-bank
+    summary: Reconcile a bank account
+    tools: [closeboard/reconcile_account, closeboard/list_unmatched_lines]
+    skills: [bank-reconciliation]
+    phrasings:
+      - Reconcile the operating bank account for August and tell me what doesn't match.
+      - Which payments on the main bank statement haven't been booked yet this month?
+      - Do a bank rec on account 1010 for Q3's last month.
+  - id: fin-fix-misposting
+    summary: Move an amount booked to the wrong account
+    tools: [ledgerline/list_journal_entries, ledgerline/post_adjustment]
+    phrasings:
+      - Someone booked 4,200 of travel to office supplies in June. Move it to the travel account.
+      - Find the entry that hit marketing instead of events last month and correct it.
+      - Reclass the 950 consulting charge from account 6100 to 6300 for May.
+  - id: fin-trial-balance
+    summary: Check the trial balance for a period
+    tools: [ledgerline/trial_balance]
+    phrasings:
+      - Pull a trial balance for July.
+      - Do debits and credits balance for the period ending 30 June?
+      - I need the TB for last quarter's final month.
+  - id: fin-account-balance
+    summary: Look up an account balance
+    tools: [ledgerline/get_account_balance]
+    phrasings:
+      - What's the closing balance on accounts receivable for September?
+      - How much is sitting in the prepaid expenses account at the end of last month?
+      - Give me the balance of account 2100 for period 2026-08.
+  - id: fin-close-status
+    summary: Check what's left on the close checklist
+    tools: [closeboard/get_close_checklist]
+    phrasings:
+      - What's still open on the October close checklist?
+      - Who hasn't finished their close tasks yet for this month?
+      - Show me the status of month-end close tasks.
+lookups:
+  - query: post an adjusting journal entry
+    category: tool-capability
+    expect: [ledgerline/post_adjustment]
+  - query: stop anyone posting into a closed accounting period
+    category: tool-capability
+    expect: [ledgerline/lock_period]
+  - query: bank statement lines with no matching ledger entry
+    category: tool-capability
+    expect: [closeboard/list_unmatched_lines, closeboard/reconcile_account:1]
+  - query: general ledger system
+    category: server-purpose
+    expect: [/ledgerline]
+  - query: month-end close workspace
+    category: server-purpose
+    expect: [/closeboard]
+  - query: where accounting periods and journal entries live
+    category: server-purpose
+    expect: [/ledgerline]
+  - query: how do I close the month
+    category: skill
+    expect: [month-end-close]
+  - query: steps to reconcile a bank statement
+    category: skill
+    expect: [bank-reconciliation, month-end-close:1]
+  - query: finance close procedure
+    category: skill
+    expect: [month-end-close]

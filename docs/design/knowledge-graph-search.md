@@ -2,7 +2,7 @@
 
 A plan for a registry that learns from its own use. Every search records the goal, the gateway sees which tools and skills the caller then used, and the next search for a similar goal gets those back as "worked before".
 
-- Status: Phase 0 in progress. The eval metrics and the pilot measurement script are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md). The frozen corpus and the harness are next.
+- Status: Phase 0 in progress. The eval metrics, the frozen corpus and the pilot measurement script are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md). The fake MCP servers and the harness are next.
 - Phase 0 to 3 run on a local Docker Compose stack with an 8 GB GPU. No deployment with real users exists yet, so the question of whether people repeat goals waits for the pilot (see Phases).
 - Written against commit `3128817` of this fork of `agentic-community/mcp-gateway-registry`. The work stays in the fork for now.
 - Code references were re-checked on 2026-11-11.
