@@ -97,6 +97,16 @@ logging.basicConfig(
 # Get logger
 logger = logging.getLogger(__name__)
 
+# Claude models from Opus 4.7 on reject sampling parameters such as temperature
+# with a 400, so the agent omits temperature for them and sets effort instead.
+# Matches first-party ids (claude-opus-5-5) and Bedrock ids
+# (us.anthropic.claude-opus-4-7-...).
+NO_SAMPLING_MODEL_PATTERN: re.Pattern[str] = re.compile(
+    r"claude-(?:opus|sonnet|haiku|fable|mythos)-(?:4-[7-9]|[5-9])(?:\b|-)"
+)
+DEFAULT_EFFORT: str = "high"
+DEFAULT_TEMPERATURE: float = 0.0
+
 # The MCP SDK's own HTTP client defaults (mcp.shared._httpx_utils).
 SDK_DEFAULT_TIMEOUT_SECONDS: float = 30.0
 SDK_DEFAULT_SSE_READ_TIMEOUT_SECONDS: float = 300.0
@@ -1150,11 +1160,28 @@ async def main():
         traceback.print_exc()
 
 
+def _accepts_sampling(
+    model_id: str,
+) -> bool:
+    """Return False for Claude models that reject temperature (Opus 4.7 and later)."""
+    return NO_SAMPLING_MODEL_PATTERN.search(model_id) is None
+
+
 def _create_model(
     provider: str,
     model_id: str,
 ):
-    """Create the LLM model based on provider."""
+    """Create the LLM model based on provider.
+
+    Older models run at temperature 0. Claude Opus 4.7 and later reject
+    temperature, so the agent leaves it out and, on the Anthropic API, sets
+    effort instead. Those runs are not deterministic.
+    """
+    sampling = _accepts_sampling(model_id)
+    temperature = DEFAULT_TEMPERATURE if sampling else None
+    if not sampling:
+        logger.info(f"{model_id} rejects temperature; leaving it unset")
+
     if provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
@@ -1164,7 +1191,8 @@ def _create_model(
         return ChatAnthropic(
             model=model_id,
             api_key=api_key,
-            temperature=0,
+            temperature=temperature,
+            effort=None if sampling else DEFAULT_EFFORT,
             max_tokens=8192,
         )
 
@@ -1173,7 +1201,7 @@ def _create_model(
     return ChatBedrock(
         model_id=model_id,
         region_name=aws_region,
-        temperature=0,
+        temperature=temperature,
         max_tokens=8192,
     )
 

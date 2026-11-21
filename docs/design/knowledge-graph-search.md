@@ -420,7 +420,7 @@ Retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned 
 
 Each phase's final run repeats on Claude Opus 5.5 (`claude-opus-5-5`). A strong model picks well among many tools without help, which makes it the harder test for the brain, and if the two models disagree the Opus number decides. Claude Fable 5.2 is more capable and costs twice as much per token. One run on it before the Phase 4 decision is a reasonable extra check. The report-rate test also records how often each model reports unprompted, since a model that ignores the `report` field changes what the brain can learn.
 
-`agents/agent.py` supports Amazon Bedrock and Anthropic, and it passes `temperature=0` to both (`agents/agent.py:1167`). Claude Opus 5.5 rejects that parameter, so the harness must drop it for Claude 5 models and set `effort` instead. Those runs cannot be made deterministic, so the Claude pass runs three times and reports the spread. The eval adds an Ollama provider through `langchain-ollama` as a development dependency only.
+`agents/agent.py` supports Amazon Bedrock and Anthropic. It runs older models at temperature 0 and, because Claude Opus 4.7 and later reject temperature, leaves it out for those and sets effort to `high` on the Anthropic API. Those runs cannot be made deterministic, so the Claude pass runs three times and reports the spread. The eval adds an Ollama provider through `langchain-ollama` as a development dependency only. Adding it refreshes `uv.lock`, which needs the PyTorch package index, so that step runs on the local machine.
 
 ## Phases
 
