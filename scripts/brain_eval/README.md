@@ -8,9 +8,47 @@ Tooling for Phase 0 of the knowledge-graph search plan in [docs/design/knowledge
 | `deployment_stats.py` | The analysis behind that report, with no I/O |
 | `metrics.py` | NDCG@10, recall@10, MRR, top-1 hits, task completion and a paired bootstrap interval, shared by every eval arm |
 | `corpus.py` | Builds the frozen corpus from the domain files: generic colliding tools, tasks, lookups, collision cases and filler servers |
-| `build_corpus.py` | Writes `tests/fixtures/brain_eval/corpus.json` and `manifest.json`, and checks they are up to date |
+| `build_corpus.py` | Writes `tests/fixtures/brain_eval/corpus.json`, `manifest.json` and one SKILL.md per skill, and checks they are up to date |
+| `fake_servers.py` | Serves every corpus server as a fake MCP server at `/<server>/mcp` and logs each call it receives |
+| `harness.py` | Registers the corpus in a registry, runs the lookups and collision queries through search, and scores them |
+| `run_retrieval.py` | The command that runs the harness against a local registry and writes the baseline report |
 
-The fake MCP servers and the harness that runs each arm against the corpus come next.
+## Running the baseline locally
+
+The baseline needs the local Docker Compose stack, because search uses the registry's embedding model. It runs on the CPU, so the GPU stays free for the whole-task runs.
+
+1. Start the stack with `./build_and_run.sh` and check `curl -s -o /dev/null -w '%{http_code}\n' http://localhost/health` returns 200.
+2. Start the fake servers in a second terminal: `uv run python scripts/brain_eval/fake_servers.py`. The registry checks each registered server's health, so it has to reach them.
+3. Save an admin token from the registry UI's "Get JWT Token" button to `.token` at the repo root.
+4. Run the baseline:
+
+```bash
+uv run python scripts/brain_eval/run_retrieval.py --arm A \
+    --skill-base-url https://github.com/OWNER/REPO/blob/BRANCH/tests/fixtures/brain_eval/skills \
+    --output baseline-core.json
+```
+
+The registry runs in Docker and reaches the fake servers through `--fake-base-url`, which defaults to `http://host.docker.internal:9100`. Docker Desktop defines that name. On Linux it usually does not, so bind the fake servers to the Docker bridge address and pass the same address to both commands:
+
+```bash
+uv run python scripts/brain_eval/fake_servers.py --host 172.17.0.1 --allowed-host 172.17.0.1:9100
+uv run python scripts/brain_eval/run_retrieval.py --arm A --fake-base-url http://172.17.0.1:9100 --skip-skills
+```
+
+Skills are registered by the URL of their SKILL.md, because the registry fetches it and its SSRF guard refuses local addresses. Point `--skill-base-url` at the `tests/fixtures/brain_eval/skills` directory of a pushed branch. For a private repository, put a GitHub token in an environment variable and pass its name with `--skill-token-env GITHUB_TOKEN`; the token never goes on the command line. Without either, pass `--skip-skills`, and the report leaves the skill category out instead of scoring it as zero.
+
+For the scale runs, build the padded corpus, serve its filler servers too, and point the harness at it:
+
+```bash
+uv run python scripts/brain_eval/build_corpus.py --scale 1000 --padded-dir /tmp/brain-eval
+uv run python scripts/brain_eval/fake_servers.py --corpus /tmp/brain-eval/corpus_1000.json --include-padding
+uv run python scripts/brain_eval/run_retrieval.py --arm A --skip-skills \
+    --corpus /tmp/brain-eval/corpus_1000.json --output baseline-1000.json
+```
+
+The report holds each category's mean NDCG@10, recall@10, MRR and top-1 hit rate, the collision ladder, and every query's ranked results, so Phase 1 can be compared with it query by query. It records the corpus file's SHA-256 and warns when the file matches nothing in `manifest.json`.
+
+Two limits apply to the collision ladder. The search API returns at most 50 results, so a right answer ranked below 50th scores as a miss. Each level is scored by keeping only that level's servers in one ranked list. That matches a registry holding only those servers as long as search scores each document on its own, which holds for the current vector and keyword scoring.
 
 ## The corpus
 

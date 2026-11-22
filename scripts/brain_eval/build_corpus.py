@@ -3,7 +3,7 @@
 
 Reads ``tests/fixtures/brain_eval/domains/*.yaml``, adds the generated tools,
 tasks, lookups and collision cases, and writes ``corpus.json`` next to the
-domain directory. With ``--scale``, it also writes padded corpora (for example
+domain directory, plus one ``skills/<name>/SKILL.md`` per skill. With ``--scale``, it also writes padded corpora (for example
 1,000 and 10,000 tools) and records each file's SHA-256 in ``manifest.json``, so
 anyone can check that their padded corpus matches the one the baseline used.
 
@@ -53,6 +53,7 @@ FIXTURE_DIR: Path = _REPO_ROOT / "tests" / "fixtures" / "brain_eval"
 DOMAINS_DIR: Path = FIXTURE_DIR / "domains"
 CORPUS_FILE: Path = FIXTURE_DIR / "corpus.json"
 MANIFEST_FILE: Path = FIXTURE_DIR / "manifest.json"
+SKILLS_DIR: Path = FIXTURE_DIR / "skills"
 DEFAULT_SCALES: tuple[int, ...] = (1000, 10000)
 
 
@@ -83,6 +84,23 @@ def corpus_json(
 ) -> str:
     """Serialize a corpus the same way every time, so its hash is stable."""
     return json.dumps(corpus.model_dump(mode="json"), indent=1, sort_keys=True) + "\n"
+
+
+def skill_files(
+    corpus: Corpus,
+) -> dict[Path, str]:
+    """Return each skill's SKILL.md, keyed by its path under ``skills/``.
+
+    The registry fetches a skill's SKILL.md by URL when it is registered, and its
+    SSRF guard refuses local addresses, so the harness registers these files by
+    their URL in this repository.
+    """
+    return {
+        SKILLS_DIR / skill.name / "SKILL.md": (
+            f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n{skill.body.rstrip()}\n"
+        )
+        for skill in corpus.skills
+    }
 
 
 def _sha256(
@@ -167,10 +185,11 @@ def main() -> int:
         json.dumps(build_manifest(core, scales, args.padded_dir), indent=2, sort_keys=True) + "\n"
     )
 
+    outputs = {CORPUS_FILE: text, MANIFEST_FILE: manifest, **skill_files(core)}
     if args.check:
         stale = [
-            path.name
-            for path, fresh in ((CORPUS_FILE, text), (MANIFEST_FILE, manifest))
+            str(path.relative_to(FIXTURE_DIR))
+            for path, fresh in outputs.items()
             if not path.exists() or path.read_text(encoding="utf-8") != fresh
         ]
         if stale:
@@ -178,12 +197,15 @@ def main() -> int:
                 f"Out of date: {', '.join(stale)}. Run scripts/brain_eval/build_corpus.py and commit the result."
             )
             return 1
-        logger.info("corpus.json and manifest.json are up to date")
+        logger.info("corpus.json, manifest.json and the SKILL.md files are up to date")
         return 0
 
-    CORPUS_FILE.write_text(text, encoding="utf-8")
-    MANIFEST_FILE.write_text(manifest, encoding="utf-8")
-    logger.info(f"Wrote {CORPUS_FILE} and {MANIFEST_FILE} in {time.perf_counter() - started:.1f}s")
+    for path, content in outputs.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    logger.info(
+        f"Wrote {len(outputs)} files under {FIXTURE_DIR} in {time.perf_counter() - started:.1f}s"
+    )
     return 0
 
 
