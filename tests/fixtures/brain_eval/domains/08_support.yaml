@@ -1,0 +1,136 @@
+domain: support
+servers:
+  - name: helpline
+    title: Helpline Support
+    description: Customer support desk. Customer cases, replies, escalations and satisfaction scores.
+    tags: [support, customers, cases]
+    item_noun: support case
+    tools:
+      - name: get_case
+        description: Get a customer support case with its messages, priority and status.
+        params: {case_id: string}
+      - name: reply_to_case
+        description: Send a reply to the customer on a support case.
+        params: {case_id: string, message: string}
+        read_only: false
+      - name: escalate_case
+        description: Escalate a support case to a specialist team with a reason.
+        params: {case_id: string, team: string, reason: string}
+        read_only: false
+      - name: list_breaching_cases
+        description: List support cases about to breach their response-time target.
+        params: {hours: integer}
+      - name: csat_report
+        description: Report customer satisfaction scores by agent or team for a date range.
+        params: {start_date: string, end_date: string}
+  - name: knowbase
+    title: Knowbase
+    description: Help-centre knowledge base. Articles that answer common customer questions.
+    tags: [support, knowledge-base, articles]
+    item_noun: article
+    tools:
+      - name: search_articles
+        description: Find help-centre articles that answer a customer question.
+        params: {question: string}
+      - name: get_article
+        description: Get the full text of a help-centre article.
+        params: {article_id: string}
+      - name: draft_article
+        description: Draft a new help-centre article for review.
+        params: {title: string, body: string}
+        read_only: false
+      - name: publish_article
+        description: Publish a reviewed draft article to the help centre.
+        params: {article_id: string}
+        read_only: false
+      - name: stale_articles
+        description: List articles not reviewed for longer than a number of months.
+        params: {months: integer}
+skills:
+  - name: answer-a-support-case
+    description: How support agents answer a case using the knowledge base before escalating.
+    body: |
+      # Answer a support case
+      Read the case, search the knowledge base for an article that answers it, and reply
+      with the answer and a link. Escalate only if no article fits or the customer is blocked.
+    tools: [helpline/get_case, knowbase/search_articles, helpline/reply_to_case, helpline/escalate_case]
+  - name: sla-triage
+    description: Morning triage of cases close to breaching their response-time target.
+    body: |
+      # SLA triage
+      List cases breaching within four hours. Reply or reassign each one, starting with the
+      highest priority.
+    tools: [helpline/list_breaching_cases, helpline/reply_to_case]
+goals:
+  - id: sup-answer-case
+    summary: Answer a customer case with a help article
+    tools: [helpline/get_case, knowbase/search_articles, helpline/reply_to_case]
+    skills: [answer-a-support-case]
+    phrasings:
+      - Answer case CS-30112, the customer can't reset their password.
+      - Reply to the customer on case 8812 with the help article about exporting data.
+      - Handle case CS-4471 using whatever we have in the help centre.
+  - id: sup-escalate
+    summary: Escalate a case
+    tools: [helpline/escalate_case]
+    phrasings:
+      - Escalate case CS-2290 to the billing specialists, the customer was charged in the wrong currency.
+      - Send case 7731 to tier two, it's a data loss report.
+      - This one needs engineering. Escalate CS-5120 with the logs the customer sent.
+  - id: sup-sla-triage
+    summary: Triage cases about to breach SLA
+    tools: [helpline/list_breaching_cases]
+    skills: [sla-triage]
+    phrasings:
+      - Which cases are about to breach their SLA in the next four hours?
+      - Show me support tickets close to missing their response time.
+      - What do we need to answer before lunch to stay inside SLA?
+  - id: sup-csat
+    summary: Report on customer satisfaction
+    tools: [helpline/csat_report]
+    phrasings:
+      - What was our CSAT last month?
+      - How happy were customers with the support team in Q3?
+      - Give me satisfaction scores by agent for October.
+  - id: sup-new-article
+    summary: Write and publish a help article
+    tools: [knowbase/draft_article, knowbase/publish_article]
+    phrasings:
+      - Write a help article explaining how to change the billing email, and publish it.
+      - We keep getting asked about two-factor setup. Add an article to the help centre.
+      - Draft and publish a knowledge base page on exporting reports to CSV.
+  - id: sup-find-article
+    summary: Find a help article
+    tools: [knowbase/search_articles]
+    phrasings:
+      - Is there a help article about cancelling a subscription?
+      - Find the knowledge base page on SSO setup.
+      - Do we have anything in the help centre about refund timelines?
+lookups:
+  - query: reply to a customer on a case
+    category: tool-capability
+    expect: [helpline/reply_to_case]
+  - query: cases about to miss their response time
+    category: tool-capability
+    expect: [helpline/list_breaching_cases]
+  - query: find a help-centre article for a question
+    category: tool-capability
+    expect: [knowbase/search_articles]
+  - query: customer support case management
+    category: server-purpose
+    expect: [/helpline]
+  - query: help centre knowledge base
+    category: server-purpose
+    expect: [/knowbase]
+  - query: customer satisfaction scores
+    category: server-purpose
+    expect: [/helpline]
+  - query: how to answer a support ticket
+    category: skill
+    expect: [answer-a-support-case]
+  - query: morning SLA triage
+    category: skill
+    expect: [sla-triage]
+  - query: use the knowledge base before escalating
+    category: skill
+    expect: [answer-a-support-case]

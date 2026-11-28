@@ -1,0 +1,137 @@
+domain: marketing
+servers:
+  - name: campaignhub
+    title: CampaignHub
+    description: Email marketing campaigns. Builds, schedules and reports on campaigns sent to audience segments.
+    tags: [marketing, email, campaigns]
+    item_noun: campaign
+    tools:
+      - name: create_campaign
+        description: Create an email campaign from a template for an audience segment.
+        params: {name: string, template_id: string, segment_id: string}
+        read_only: false
+      - name: schedule_campaign
+        description: Schedule a campaign to send at a date and time.
+        params: {campaign_id: string, send_at: string}
+        read_only: false
+      - name: campaign_performance
+        description: Report opens, clicks and unsubscribes for a sent campaign.
+        params: {campaign_id: string}
+      - name: pause_campaign
+        description: Pause a scheduled or sending campaign.
+        params: {campaign_id: string}
+        read_only: false
+      - name: list_templates
+        description: List the email templates available for campaigns.
+        params: {category: string}
+  - name: audiencelab
+    title: AudienceLab
+    description: Customer audience segmentation. Builds segments from customer attributes and behaviour.
+    tags: [marketing, segments, audiences]
+    item_noun: segment
+    tools:
+      - name: create_segment
+        description: Create an audience segment from rules on customer attributes and activity.
+        params: {name: string, rules: string}
+        read_only: false
+      - name: segment_size
+        description: Count how many contacts are in a segment right now.
+        params: {segment_id: string}
+      - name: list_segments
+        description: List saved audience segments with their sizes.
+        params: {owner: string}
+      - name: export_segment
+        description: Export a segment's contacts to a CSV file.
+        params: {segment_id: string}
+      - name: suppress_contacts
+        description: Add contacts to the suppression list so they get no marketing email.
+        params: {emails: array}
+        read_only: false
+skills:
+  - name: launch-email-campaign
+    description: Checklist for launching an email campaign, from segment to scheduled send.
+    body: |
+      # Launch an email campaign
+      Build or pick the segment and check its size. Create the campaign from an approved
+      template, send a test, then schedule it for a weekday morning.
+    tools: [audiencelab/create_segment, audiencelab/segment_size, campaignhub/create_campaign, campaignhub/schedule_campaign]
+  - name: campaign-retro
+    description: How to review a campaign's results and write up what to change next time.
+    body: |
+      # Campaign retro
+      Pull opens, clicks and unsubscribes. Compare with the last three campaigns to the same
+      segment and note what to change.
+    tools: [campaignhub/campaign_performance]
+goals:
+  - id: mkt-launch
+    summary: Launch a campaign to a new segment
+    tools: [audiencelab/create_segment, campaignhub/create_campaign, campaignhub/schedule_campaign]
+    skills: [launch-email-campaign]
+    phrasings:
+      - Email everyone who signed up in the last 30 days but hasn't bought anything, using the welcome-back template, next Tuesday at 9.
+      - Set up a campaign for trial users in Germany with the upgrade offer and send it Thursday morning.
+      - Build a segment of lapsed customers and schedule the winback email for Monday.
+  - id: mkt-results
+    summary: Check how a campaign did
+    tools: [campaignhub/campaign_performance]
+    skills: [campaign-retro]
+    phrasings:
+      - How did the November newsletter perform?
+      - What were the open and click rates on campaign CMP-2291?
+      - Did the Black Friday email get many unsubscribes?
+  - id: mkt-pause
+    summary: Stop a campaign
+    tools: [campaignhub/pause_campaign]
+    phrasings:
+      - Stop the promo email going out, the discount code is wrong.
+      - Pause campaign CMP-4410 right now.
+      - Hold the scheduled product launch email until legal signs off.
+  - id: mkt-segment-size
+    summary: Size an audience
+    tools: [audiencelab/create_segment, audiencelab/segment_size]
+    phrasings:
+      - How many customers in France bought more than twice last year?
+      - Size up an audience of enterprise admins who logged in this month.
+      - How big would a segment of churned users from Q2 be?
+  - id: mkt-unsubscribe
+    summary: Stop emailing some contacts
+    tools: [audiencelab/suppress_contacts]
+    phrasings:
+      - Make sure we never send marketing email to ceo@initech.example again.
+      - Add these three addresses to the do-not-mail list.
+      - A customer complained about our emails. Suppress pat@example.com.
+  - id: mkt-export
+    summary: Export a segment
+    tools: [audiencelab/export_segment]
+    phrasings:
+      - Export the webinar attendees segment to CSV.
+      - Give me a spreadsheet of contacts in segment SEG-118.
+      - Download the list of high-value customers from AudienceLab.
+lookups:
+  - query: schedule an email campaign
+    category: tool-capability
+    expect: [campaignhub/schedule_campaign]
+  - query: how many contacts are in a segment
+    category: tool-capability
+    expect: [audiencelab/segment_size]
+  - query: stop sending marketing email to a person
+    category: tool-capability
+    expect: [audiencelab/suppress_contacts]
+  - query: email marketing campaigns
+    category: server-purpose
+    expect: [/campaignhub]
+  - query: customer audience segmentation
+    category: server-purpose
+    expect: [/audiencelab]
+  - query: build marketing segments
+    category: server-purpose
+    expect: [/audiencelab]
+  - query: checklist for launching an email campaign
+    category: skill
+    expect: [launch-email-campaign]
+  - query: review campaign results
+    category: skill
+    expect: [campaign-retro]
+  - query: how do I send a marketing email
+    category: skill
+    expect: [launch-email-campaign]

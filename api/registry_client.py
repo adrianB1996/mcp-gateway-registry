@@ -1648,6 +1648,23 @@ class SkillRegistrationRequest(BaseModel):
     allowed_groups: list[str] = Field(
         default_factory=list, description="Groups for group visibility"
     )
+    status: str | None = Field(
+        None,
+        description="Lifecycle status: active, beta, deprecated or draft. Omitted, the registry "
+        "uses draft, which default searches hide.",
+    )
+    auth_scheme: str | None = Field(
+        None,
+        description="How the registry authenticates when it fetches SKILL.md: none, bearer, "
+        "api_key or global_credentials. Omitted, the registry uses none.",
+    )
+    auth_credential: str | None = Field(
+        None,
+        repr=False,
+        description="Token or key for fetching SKILL.md from a private repository. The "
+        "registry encrypts it before storage. Kept out of this model's repr so it is "
+        "never logged.",
+    )
 
 
 class SkillCard(BaseModel):

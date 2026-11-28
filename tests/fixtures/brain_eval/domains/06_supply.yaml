@@ -1,0 +1,137 @@
+domain: supply
+servers:
+  - name: stockroom
+    title: Stockroom Inventory
+    description: Warehouse inventory. Stock levels by location, reorder points and purchase orders to suppliers.
+    tags: [inventory, warehouse, purchasing]
+    item_noun: stock item
+    tools:
+      - name: get_stock_level
+        description: Get on-hand and reserved quantity of a SKU at each warehouse.
+        params: {sku: string}
+      - name: items_below_reorder_point
+        description: List SKUs whose stock has fallen below their reorder point.
+        params: {warehouse: string}
+      - name: create_purchase_order
+        description: Raise a purchase order to a supplier for a SKU and quantity.
+        params: {supplier_id: string, sku: string, quantity: integer}
+        read_only: false
+      - name: transfer_stock
+        description: Move stock of a SKU from one warehouse to another.
+        params: {sku: string, from_warehouse: string, to_warehouse: string, quantity: integer}
+        read_only: false
+      - name: adjust_stock
+        description: Correct the recorded quantity of a SKU after a stock count.
+        params: {sku: string, warehouse: string, counted_quantity: integer}
+        read_only: false
+  - name: shipright
+    title: ShipRight Logistics
+    description: Outbound shipping. Creates shipments with carriers, prints labels and tracks deliveries.
+    tags: [logistics, shipping, delivery]
+    item_noun: shipment
+    tools:
+      - name: create_shipment
+        description: Create a shipment for an order with a carrier and service level.
+        params: {order_id: string, carrier: string, service: string}
+        read_only: false
+      - name: track_shipment
+        description: Get the latest tracking events and estimated delivery date for a shipment.
+        params: {tracking_number: string}
+      - name: get_shipping_rates
+        description: Compare carrier rates for a parcel's weight, size and destination.
+        params: {weight_kg: number, destination_postcode: string}
+      - name: cancel_shipment
+        description: Cancel a shipment that has not been collected by the carrier yet.
+        params: {shipment_id: string}
+        read_only: false
+      - name: late_deliveries
+        description: List shipments that missed their estimated delivery date.
+        params: {days: integer}
+skills:
+  - name: restock-low-inventory
+    description: How the operations team restocks items that run low, by transfer or by purchase order.
+    body: |
+      # Restock low inventory
+      List items below their reorder point. If another warehouse has spare stock, transfer
+      it. Otherwise raise a purchase order to the preferred supplier.
+    tools: [stockroom/items_below_reorder_point, stockroom/get_stock_level, stockroom/transfer_stock, stockroom/create_purchase_order]
+  - name: late-shipment-followup
+    description: What to do when a delivery is late, from tracking to telling the customer.
+    body: |
+      # Late shipment follow-up
+      Track the shipment and check the carrier's latest event. If it is stuck, open a claim
+      with the carrier and email the customer a new delivery estimate.
+    tools: [shipright/track_shipment, messenger/send_email]
+goals:
+  - id: sup-restock
+    summary: Restock items running low
+    tools: [stockroom/items_below_reorder_point, stockroom/create_purchase_order]
+    skills: [restock-low-inventory]
+    phrasings:
+      - What's running low in the Leeds warehouse? Order more of whatever is below its reorder point.
+      - Restock anything under the reorder level at the main DC.
+      - We keep running out of things. Find low-stock items and raise POs for them.
+  - id: sup-stock-check
+    summary: Check stock for a product
+    tools: [stockroom/get_stock_level]
+    phrasings:
+      - How many units of SKU-40118 do we have?
+      - Do we have the blue widget in stock anywhere?
+      - Check inventory for part number 7731-B across all warehouses.
+  - id: sup-ship-order
+    summary: Ship an order the cheapest way
+    tools: [shipright/get_shipping_rates, shipright/create_shipment]
+    phrasings:
+      - Ship order ORD-55120 with whichever carrier is cheapest for a 4 kg parcel to M1 1AE.
+      - Get the best rate for this 12 kilo box to 10115 Berlin and book it for order 88812.
+      - Book standard shipping for order 4410 after comparing carriers.
+  - id: sup-track
+    summary: Track a delivery
+    tools: [shipright/track_shipment]
+    phrasings:
+      - Where's the parcel with tracking number 1Z999AA10123456784?
+      - When will shipment SHP-2201 arrive?
+      - The customer says their order hasn't shown up. Track 9400111899223.
+  - id: sup-late-report
+    summary: Report on late deliveries
+    tools: [shipright/late_deliveries]
+    skills: [late-shipment-followup]
+    phrasings:
+      - Which deliveries were late this week?
+      - List shipments that missed their delivery date in the last 30 days.
+      - How many orders arrived late since Monday?
+  - id: sup-count-fix
+    summary: Fix stock after a count
+    tools: [stockroom/adjust_stock]
+    phrasings:
+      - The cycle count found 37 of SKU-2290 in Leeds, not 45. Fix the record.
+      - Correct inventory for part 118-C at the Dublin warehouse to 120.
+      - We counted the shelf and there are only 9 left of SKU-771. Update it.
+lookups:
+  - query: raise a purchase order to a supplier
+    category: tool-capability
+    expect: [stockroom/create_purchase_order]
+  - query: compare carrier shipping rates
+    category: tool-capability
+    expect: [shipright/get_shipping_rates]
+  - query: products below reorder point
+    category: tool-capability
+    expect: [stockroom/items_below_reorder_point]
+  - query: warehouse inventory system
+    category: server-purpose
+    expect: [/stockroom]
+  - query: shipping and delivery tracking
+    category: server-purpose
+    expect: [/shipright]
+  - query: carrier labels and shipments
+    category: server-purpose
+    expect: [/shipright]
+  - query: how to restock items that are running low
+    category: skill
+    expect: [restock-low-inventory]
+  - query: a delivery is late what should I do
+    category: skill
+    expect: [late-shipment-followup]
+  - query: replenish warehouse stock
+    category: skill
+    expect: [restock-low-inventory]

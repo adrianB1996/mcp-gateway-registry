@@ -1,0 +1,136 @@
+domain: legal
+servers:
+  - name: contractvault
+    title: ContractVault
+    description: Contract repository. Signed agreements, renewal dates, clauses and signature requests.
+    tags: [legal, contracts, renewals]
+    item_noun: contract
+    tools:
+      - name: find_contract
+        description: Find contracts with a counterparty, by name or contract type.
+        params: {counterparty: string}
+      - name: upcoming_renewals
+        description: List contracts that renew or expire within a number of days.
+        params: {days: integer}
+      - name: get_clause
+        description: Get the text of a named clause, such as termination or liability, from a contract.
+        params: {contract_id: string, clause: string}
+      - name: send_for_signature
+        description: Send a contract to signatories for electronic signature.
+        params: {contract_id: string, signers: array}
+        read_only: false
+      - name: create_nda
+        description: Create a mutual NDA from the standard template for a counterparty.
+        params: {counterparty: string}
+        read_only: false
+  - name: policydesk
+    title: PolicyDesk
+    description: Compliance and policy management. Company policies, attestations and data processing records.
+    tags: [legal, compliance, policy]
+    item_noun: policy
+    tools:
+      - name: get_policy
+        description: Get the current version of a company policy.
+        params: {policy_name: string}
+      - name: attestation_status
+        description: Show which employees have not yet attested to a policy.
+        params: {policy_name: string}
+      - name: send_attestation_reminder
+        description: Remind employees who have not attested to a policy.
+        params: {policy_name: string}
+        read_only: false
+      - name: list_processors
+        description: List third-party data processors and the personal data they handle.
+        params: {data_category: string}
+      - name: log_data_request
+        description: Log a data subject access or deletion request and start its deadline.
+        params: {requester_email: string, request_type: string}
+        read_only: false
+skills:
+  - name: nda-request
+    description: How to get a standard NDA signed with a new partner or vendor.
+    body: |
+      # NDA request
+      Check whether an NDA with the counterparty already exists. If not, create one from
+      the standard template and send it for signature to both sides.
+    tools: [contractvault/find_contract, contractvault/create_nda, contractvault/send_for_signature]
+  - name: data-subject-request
+    description: Steps for handling a privacy request to access or delete someone's personal data.
+    body: |
+      # Data subject request
+      Log the request the day it arrives so the deadline starts. Find every processor that
+      holds the person's data and ask each one to act. Confirm to the requester within 30 days.
+    tools: [policydesk/log_data_request, policydesk/list_processors]
+goals:
+  - id: legal-nda
+    summary: Get an NDA signed with a new company
+    tools: [contractvault/find_contract, contractvault/create_nda, contractvault/send_for_signature]
+    skills: [nda-request]
+    phrasings:
+      - We're starting talks with Vandelay Industries. Get an NDA out to them for signature.
+      - Do we have an NDA with Soylent Corp? If not, send one to their legal team.
+      - Set up a mutual NDA with the new design agency and send it to sign.
+  - id: legal-renewals
+    summary: Find contracts renewing soon
+    tools: [contractvault/upcoming_renewals]
+    phrasings:
+      - Which contracts renew in the next 60 days?
+      - What vendor agreements are expiring this quarter?
+      - List anything that auto-renews before the end of the year.
+  - id: legal-termination-terms
+    summary: Look up a contract's termination terms
+    tools: [contractvault/find_contract, contractvault/get_clause]
+    phrasings:
+      - What's the notice period to terminate our contract with Initech?
+      - Pull the liability cap from the Globex master services agreement.
+      - Can we cancel the Acme hosting contract early? Show me the termination clause.
+  - id: legal-attestation-chase
+    summary: Chase people who haven't attested to a policy
+    tools: [policydesk/attestation_status, policydesk/send_attestation_reminder]
+    phrasings:
+      - Who hasn't signed off the new code of conduct yet? Send them a reminder.
+      - Chase everyone missing their security policy attestation.
+      - Remind the people who haven't acknowledged the travel policy update.
+  - id: legal-dsar
+    summary: Handle a data deletion request
+    tools: [policydesk/log_data_request, policydesk/list_processors]
+    skills: [data-subject-request]
+    phrasings:
+      - A customer, lee@example.com, wants all their data deleted. Start the process.
+      - We received a GDPR access request from a former employee. Log it and find who holds their data.
+      - Someone emailed asking what personal data we keep on them. Handle it properly.
+  - id: legal-policy-lookup
+    summary: Read a company policy
+    tools: [policydesk/get_policy]
+    phrasings:
+      - What does the expenses policy say about client dinners?
+      - Show me the current remote work policy.
+      - Find the data retention policy.
+lookups:
+  - query: send a contract for e-signature
+    category: tool-capability
+    expect: [contractvault/send_for_signature]
+  - query: contracts expiring soon
+    category: tool-capability
+    expect: [contractvault/upcoming_renewals]
+  - query: who has not acknowledged a policy
+    category: tool-capability
+    expect: [policydesk/attestation_status]
+  - query: contract repository
+    category: server-purpose
+    expect: [/contractvault]
+  - query: compliance and policy management
+    category: server-purpose
+    expect: [/policydesk]
+  - query: GDPR data processing records
+    category: server-purpose
+    expect: [/policydesk]
+  - query: how to get an NDA signed
+    category: skill
+    expect: [nda-request]
+  - query: handle a request to delete personal data
+    category: skill
+    expect: [data-subject-request]
+  - query: privacy access request procedure
+    category: skill
+    expect: [data-subject-request]

@@ -1,0 +1,138 @@
+domain: sales
+servers:
+  - name: dealflow
+    title: Dealflow CRM
+    description: Customer relationship management for the sales team. Accounts, contacts, opportunities and pipeline.
+    tags: [sales, crm, pipeline]
+    item_noun: opportunity
+    tools:
+      - name: get_account
+        description: Get a customer account with its owner, industry and open opportunities.
+        params: {account_id: string}
+      - name: list_open_opportunities
+        description: List open opportunities for a sales rep or team with stage, amount and close date.
+        params: {owner: string}
+      - name: update_opportunity_stage
+        description: Move an opportunity to a new pipeline stage.
+        params: {opportunity_id: string, stage: string}
+        read_only: false
+      - name: log_activity
+        description: Log a call, meeting or email against an account or opportunity.
+        params: {record_id: string, activity_type: string, notes: string}
+        read_only: false
+      - name: pipeline_forecast
+        description: Forecast this quarter's bookings from the weighted pipeline.
+        params: {quarter: string}
+  - name: quotebuilder
+    title: QuoteBuilder
+    description: Configure, price and quote. Builds price quotes from the product catalogue with discount approvals.
+    tags: [sales, quotes, pricing]
+    item_noun: quote
+    tools:
+      - name: create_quote
+        description: Create a price quote for an opportunity from catalogue products and quantities.
+        params: {opportunity_id: string, products: array}
+        read_only: false
+      - name: apply_discount
+        description: Apply a percentage discount to a quote, sending it for approval above the rep's limit.
+        params: {quote_id: string, percent: number}
+        read_only: false
+      - name: get_price_list
+        description: Get list prices for products in a currency.
+        params: {currency: string}
+      - name: send_quote
+        description: Send a finished quote to the customer contact as a PDF.
+        params: {quote_id: string, contact_email: string}
+        read_only: false
+      - name: quote_status
+        description: Get a quote's approval and acceptance status.
+        params: {quote_id: string}
+skills:
+  - name: quote-to-close
+    description: How a sales rep takes a deal from qualified opportunity to a signed quote.
+    body: |
+      # Quote to close
+      Confirm the opportunity is at the proposal stage. Build the quote from the price list,
+      keep discounts within your limit or get approval, send it, and move the opportunity
+      to negotiation.
+    tools: [quotebuilder/create_quote, quotebuilder/apply_discount, quotebuilder/send_quote, dealflow/update_opportunity_stage]
+  - name: weekly-pipeline-review
+    description: Agenda for the weekly sales pipeline review and forecast call.
+    body: |
+      # Weekly pipeline review
+      Pull each rep's open opportunities, flag any past their close date, and agree the
+      quarter's forecast from the weighted pipeline.
+    tools: [dealflow/list_open_opportunities, dealflow/pipeline_forecast]
+goals:
+  - id: sales-send-quote
+    summary: Quote a customer
+    tools: [quotebuilder/create_quote, quotebuilder/send_quote]
+    skills: [quote-to-close]
+    phrasings:
+      - Put together a quote for 50 seats of the Pro plan on opportunity OPP-2210 and send it to their buyer.
+      - Send Globex a quote for the analytics add-on, 3 years, to jane@globex.example.
+      - Quote 200 units of SKU-118 for the Initech deal and email it over.
+  - id: sales-discount
+    summary: Discount a quote
+    tools: [quotebuilder/apply_discount]
+    phrasings:
+      - Knock 12 percent off quote Q-7731.
+      - The customer wants a better price. Apply a 20 percent discount to their quote.
+      - Give quote 5582 the end-of-quarter discount of 15 percent.
+  - id: sales-advance-deal
+    summary: Move a deal forward and log the call
+    tools: [dealflow/update_opportunity_stage, dealflow/log_activity]
+    phrasings:
+      - Had a great call with Umbrella today. Log it and move the deal to negotiation.
+      - OPP-4410 passed the technical review. Update the stage and add a note.
+      - Mark the Hooli opportunity as proposal sent and record that I emailed them.
+  - id: sales-forecast
+    summary: Get the quarter's forecast
+    tools: [dealflow/pipeline_forecast]
+    skills: [weekly-pipeline-review]
+    phrasings:
+      - What's our forecast for Q4?
+      - How much do we expect to book this quarter based on the pipeline?
+      - Give me the weighted pipeline number for Q1 next year.
+  - id: sales-my-pipeline
+    summary: List a rep's open deals
+    tools: [dealflow/list_open_opportunities]
+    phrasings:
+      - Show me my open deals.
+      - What's in Marcus's pipeline right now?
+      - List the EMEA team's open opportunities with close dates.
+  - id: sales-account-brief
+    summary: Brief on a customer account
+    tools: [dealflow/get_account]
+    phrasings:
+      - I'm meeting Wayne Enterprises tomorrow. What do we know about the account?
+      - Who owns the Stark Industries account and what's open with them?
+      - Pull up account ACC-901.
+lookups:
+  - query: create a price quote
+    category: tool-capability
+    expect: [quotebuilder/create_quote]
+  - query: forecast bookings from the pipeline
+    category: tool-capability
+    expect: [dealflow/pipeline_forecast]
+  - query: record a sales call against a deal
+    category: tool-capability
+    expect: [dealflow/log_activity]
+  - query: CRM for accounts and opportunities
+    category: server-purpose
+    expect: [/dealflow]
+  - query: configure price quote tool
+    category: server-purpose
+    expect: [/quotebuilder]
+  - query: sales pipeline system
+    category: server-purpose
+    expect: [/dealflow]
+  - query: steps from opportunity to signed quote
+    category: skill
+    expect: [quote-to-close]
+  - query: weekly sales forecast meeting agenda
+    category: skill
+    expect: [weekly-pipeline-review]
+  - query: how to send a customer a quote
+    category: skill
+    expect: [quote-to-close]

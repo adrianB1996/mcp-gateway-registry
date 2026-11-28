@@ -1,0 +1,138 @@
+domain: hr
+servers:
+  - name: peoplehub
+    title: PeopleHub HR
+    description: Human resources system of record. Employee profiles, managers, time off and leave balances.
+    tags: [hr, employees, time-off]
+    item_noun: employee record
+    tools:
+      - name: get_employee
+        description: Get an employee's profile, including job title, department and manager.
+        params: {employee_id: string}
+      - name: list_direct_reports
+        description: List the employees who report directly to a manager.
+        params: {manager_id: string}
+      - name: get_leave_balance
+        description: Get an employee's remaining holiday, sick and parental leave.
+        params: {employee_id: string}
+      - name: request_time_off
+        description: Submit a time-off request for an employee for a date range.
+        params: {employee_id: string, start_date: string, end_date: string, leave_type: string}
+        read_only: false
+      - name: change_manager
+        description: Move an employee to report to a different manager from a given date.
+        params: {employee_id: string, new_manager_id: string, effective_date: string}
+        read_only: false
+  - name: talentdesk
+    title: TalentDesk Recruiting
+    description: Applicant tracking for recruiters. Job openings, candidates, interview loops and offers.
+    tags: [hr, recruiting, hiring]
+    item_noun: candidate
+    tools:
+      - name: list_open_roles
+        description: List open job requisitions with their hiring manager and stage counts.
+        params: {department: string}
+      - name: get_candidate
+        description: Get a candidate's profile, current stage and interview feedback.
+        params: {candidate_id: string}
+      - name: schedule_interview
+        description: Schedule an interview for a candidate with a list of interviewers.
+        params: {candidate_id: string, interviewers: array, start_time: string}
+        read_only: false
+      - name: advance_candidate
+        description: Move a candidate to the next stage of the hiring pipeline.
+        params: {candidate_id: string, stage: string}
+        read_only: false
+      - name: create_offer
+        description: Draft a job offer for a candidate with salary and start date.
+        params: {candidate_id: string, salary: number, start_date: string}
+        read_only: false
+skills:
+  - name: new-hire-onboarding
+    description: Checklist for onboarding a new hire, from accepted offer to first-day setup.
+    body: |
+      # New hire onboarding
+      Once the offer is accepted, confirm the start date and manager, make sure the
+      employee record exists, order a laptop, and tell the team. Book a first-week
+      meeting with the manager.
+    tools: [peoplehub/get_employee, assetvault/assign_device, messenger/send_email]
+  - name: interview-loop
+    description: How to run a structured interview loop and collect feedback before a hiring decision.
+    body: |
+      # Interview loop
+      Pick four interviewers covering skills, values and the hiring manager. Schedule the
+      loop within a week, collect written feedback before the debrief, then advance or
+      reject the candidate.
+    tools: [talentdesk/get_candidate, talentdesk/schedule_interview, talentdesk/advance_candidate]
+goals:
+  - id: hr-book-leave
+    summary: Book time off
+    tools: [peoplehub/get_leave_balance, peoplehub/request_time_off]
+    phrasings:
+      - Book me off from 22 December to 2 January, if I have enough holiday left.
+      - I want to take next Friday off. Do I have the days, and can you put the request in?
+      - Request a week of annual leave for employee E-4410 starting 9 March.
+  - id: hr-leave-balance
+    summary: Check remaining leave
+    tools: [peoplehub/get_leave_balance]
+    phrasings:
+      - How many holiday days do I have left?
+      - What's Priya's remaining sick leave?
+      - Check the parental leave balance for employee E-2090.
+  - id: hr-team-list
+    summary: List a manager's team
+    tools: [peoplehub/list_direct_reports]
+    phrasings:
+      - Who reports to Dana Whitfield?
+      - List my direct reports.
+      - Give me the team under manager M-118.
+  - id: hr-reorg-move
+    summary: Move someone to a new manager
+    tools: [peoplehub/get_employee, peoplehub/change_manager]
+    phrasings:
+      - Move Tom Reyes onto Aisha's team from the first of next month.
+      - Starting 1 February, employee E-3321 should report to M-207 instead.
+      - Transfer Lena to the platform team under its new manager, effective Monday.
+  - id: hr-schedule-loop
+    summary: Set up interviews for a candidate
+    tools: [talentdesk/get_candidate, talentdesk/schedule_interview]
+    skills: [interview-loop]
+    phrasings:
+      - Set up the onsite for candidate CAND-5512 with Raj, Mei and Carlos next Tuesday afternoon.
+      - Book interviews for the backend engineer applicant who passed the phone screen.
+      - Schedule a panel interview for Jordan Price this week.
+  - id: hr-make-offer
+    summary: Extend an offer to a candidate
+    tools: [talentdesk/get_candidate, talentdesk/advance_candidate, talentdesk/create_offer]
+    phrasings:
+      - We want to hire CAND-6120. Draft an offer at 95,000 starting 2 March.
+      - Move the product designer candidate to offer and draft one at the band midpoint.
+      - Make an offer to Sam Okafor, 120k, start date in six weeks.
+lookups:
+  - query: submit a holiday request
+    category: tool-capability
+    expect: [peoplehub/request_time_off]
+  - query: who reports to a manager
+    category: tool-capability
+    expect: [peoplehub/list_direct_reports]
+  - query: book an interview with a candidate
+    category: tool-capability
+    expect: [talentdesk/schedule_interview]
+  - query: HR system of record for employees
+    category: server-purpose
+    expect: [/peoplehub]
+  - query: applicant tracking system
+    category: server-purpose
+    expect: [/talentdesk]
+  - query: recruiting pipeline and job openings
+    category: server-purpose
+    expect: [/talentdesk]
+  - query: onboarding checklist for a new starter
+    category: skill
+    expect: [new-hire-onboarding]
+  - query: how to run interviews before a hiring decision
+    category: skill
+    expect: [interview-loop]
+  - query: first day setup for new employees
+    category: skill
+    expect: [new-hire-onboarding]

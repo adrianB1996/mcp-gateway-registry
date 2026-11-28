@@ -1,0 +1,138 @@
+domain: engineering
+servers:
+  - name: codeforge
+    title: CodeForge
+    description: Source code hosting. Repositories, branches, pull requests and code review.
+    tags: [engineering, git, code-review]
+    item_noun: pull request
+    tools:
+      - name: list_open_pull_requests
+        description: List open pull requests in a repository with author, reviewers and age.
+        params: {repository: string}
+      - name: get_pull_request_diff
+        description: Get the changed files and diff of a pull request.
+        params: {repository: string, number: integer}
+      - name: request_review
+        description: Request a review on a pull request from one or more people.
+        params: {repository: string, number: integer, reviewers: array}
+        read_only: false
+      - name: merge_pull_request
+        description: Merge an approved pull request into its target branch.
+        params: {repository: string, number: integer}
+        read_only: false
+      - name: create_branch
+        description: Create a new branch from another branch in a repository.
+        params: {repository: string, name: string, from_branch: string}
+        read_only: false
+  - name: deploytrack
+    title: DeployTrack
+    description: Deployments and incidents. Releases services to environments, rolls back, and tracks incidents.
+    tags: [engineering, deployment, incidents]
+    item_noun: deployment
+    tools:
+      - name: deploy_service
+        description: Deploy a version of a service to an environment.
+        params: {service: string, version: string, environment: string}
+        read_only: false
+      - name: rollback_service
+        description: Roll a service in an environment back to its previous version.
+        params: {service: string, environment: string}
+        read_only: false
+      - name: deployment_history
+        description: List recent deployments of a service with version, time and who deployed it.
+        params: {service: string}
+      - name: open_incident
+        description: Open an incident with a severity and page the on-call engineer.
+        params: {title: string, severity: string, service: string}
+        read_only: false
+      - name: list_active_incidents
+        description: List incidents that are still open with their severity and commander.
+        params: {severity: string}
+skills:
+  - name: bad-deploy-rollback
+    description: Runbook for rolling back a deployment that broke production.
+    body: |
+      # Rollback runbook
+      Open an incident first so on-call is paged. Check deployment history to find the last
+      good version, roll back, and confirm error rates recover before closing.
+    tools: [deploytrack/open_incident, deploytrack/deployment_history, deploytrack/rollback_service]
+  - name: code-review-etiquette
+    description: Team norms for requesting and giving code review on pull requests.
+    body: |
+      # Code review
+      Keep pull requests small. Request two reviewers, one from the owning team. Reviewers
+      answer within a working day. Merge only after approval and green checks.
+    tools: [codeforge/request_review, codeforge/merge_pull_request]
+goals:
+  - id: eng-rollback
+    summary: Roll back a bad deploy
+    tools: [deploytrack/deployment_history, deploytrack/rollback_service]
+    skills: [bad-deploy-rollback]
+    phrasings:
+      - The checkout service started throwing errors after this morning's release. Roll it back in production.
+      - Undo the last deploy of payments-api in prod.
+      - Something broke in staging after the search service went out. Revert to the previous version.
+  - id: eng-release
+    summary: Deploy a new version
+    tools: [deploytrack/deploy_service]
+    phrasings:
+      - Ship version 2.14.0 of the notifications service to production.
+      - Deploy inventory-api 1.9.3 to staging.
+      - Push the latest build, 4.2.1, of the web frontend to prod.
+  - id: eng-review-request
+    summary: Get reviewers on a pull request
+    tools: [codeforge/request_review]
+    skills: [code-review-etiquette]
+    phrasings:
+      - Ask Priya and Omar to review PR 1882 in the billing repo.
+      - Get someone from the platform team to look at my pull request 77 in infra-modules.
+      - Request reviews on pull request 4031 in web-app from the frontend leads.
+  - id: eng-stale-prs
+    summary: Find stale pull requests
+    tools: [codeforge/list_open_pull_requests]
+    phrasings:
+      - Which pull requests in the api repo have been open for more than a week?
+      - List open PRs in mobile-app.
+      - What's waiting for review in the data-pipeline repository?
+  - id: eng-incident
+    summary: Declare an incident
+    tools: [deploytrack/open_incident]
+    phrasings:
+      - Logins are failing for everyone. Open a sev1 for the auth service and page on-call.
+      - Declare an incident, checkout latency is over five seconds.
+      - Raise a sev2 for the reporting service, exports have been failing since noon.
+  - id: eng-who-deployed
+    summary: Find out what was deployed recently
+    tools: [deploytrack/deployment_history]
+    phrasings:
+      - Who deployed the orders service yesterday and which version went out?
+      - What versions of search-api went to production this week?
+      - Show the recent deployment history for the gateway.
+lookups:
+  - query: roll a service back to the previous version
+    category: tool-capability
+    expect: [deploytrack/rollback_service]
+  - query: ask someone to review a pull request
+    category: tool-capability
+    expect: [codeforge/request_review]
+  - query: page on-call for an outage
+    category: tool-capability
+    expect: [deploytrack/open_incident]
+  - query: git repositories and pull requests
+    category: server-purpose
+    expect: [/codeforge]
+  - query: deployments and incident tracking
+    category: server-purpose
+    expect: [/deploytrack]
+  - query: release services to production
+    category: server-purpose
+    expect: [/deploytrack]
+  - query: runbook for a broken deploy
+    category: skill
+    expect: [bad-deploy-rollback]
+  - query: code review norms
+    category: skill
+    expect: [code-review-etiquette]
+  - query: production broke after a release what now
+    category: skill
+    expect: [bad-deploy-rollback]

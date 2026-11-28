@@ -1,0 +1,34 @@
+{
+  "core": {
+    "collision_cases": 40,
+    "goals": 68,
+    "lookups": {
+      "server-purpose": 33,
+      "skill": 33,
+      "tool-capability": 33,
+      "tool-name": 97
+    },
+    "padding_servers": 0,
+    "servers": 22,
+    "sha256": "558f349fc28348deb817c34bea6c535479432401f389b5361d59a5b7e4178748",
+    "skills": 22,
+    "tasks": {
+      "hidden": 124,
+      "tuning": 98
+    },
+    "tools": 167
+  },
+  "scales": {
+    "1000": {
+      "servers": 127,
+      "sha256": "1f56c81b6798bf355fe99b75784b39cc35e4f10982f8e0388e7ee53a636f37e5",
+      "tools": 1007
+    },
+    "10000": {
+      "servers": 1252,
+      "sha256": "d22746dd16ed07e6969ea313c69d6cc8a7720cc2649c62082e51d97335cfa40e",
+      "tools": 10007
+    }
+  },
+  "seed": 20261121
+}

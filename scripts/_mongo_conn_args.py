@@ -139,6 +139,24 @@ def _build_connection_string(
     return f"mongodb://{credentials}{args.host}:{args.port}/{args.database}{query_string}"
 
 
+def build_connection_string(
+    args: argparse.Namespace,
+) -> str:
+    """Return the connection string for the CLI connection overrides.
+
+    Public entry point for scripts that connect with their own client instead of
+    the registry's. The password comes from ``DOCUMENTDB_PASSWORD``, never argv,
+    and the returned string can contain it, so callers must not log it.
+
+    Args:
+        args: Parsed CLI args with ``host`` set.
+
+    Returns:
+        A ``mongodb://`` connection string.
+    """
+    return _build_connection_string(args)
+
+
 def apply_connection_overrides(
     args: argparse.Namespace,
 ) -> None:
