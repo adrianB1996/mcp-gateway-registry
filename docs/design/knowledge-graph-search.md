@@ -2,7 +2,7 @@
 
 A plan for a registry that learns from its own use. Every search records the goal, the gateway sees which tools and skills the caller then used, and the next search for a similar goal gets those back as "worked before".
 
-- Status: Phase 0 in progress. The corpus, fake MCP servers, retrieval harness, metrics and pilot measurement script are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md), and none has run against a real registry yet. The whole-task runner and the Ollama provider are not built.
+- Status: Phase 0 in progress. The corpus, fake MCP servers, retrieval harness, whole-task runner, metrics and pilot measurement script are in [`scripts/brain_eval/`](../../scripts/brain_eval/README.md), and `agents/agent.py` has an Ollama provider. None of it has run against a real registry yet.
 - Phase 0 to 3 run on a local Docker Compose stack with an 8 GB GPU. No deployment with real users exists yet, so the question of whether people repeat goals waits for the pilot (see Phases).
 - Written against commit `3128817` of this fork of `agentic-community/mcp-gateway-registry`. The work stays in the fork for now.
 - Code references were re-checked on 2026-11-11.
@@ -420,7 +420,7 @@ Retrieval scoring uses no LLM. Whole-task runs use `qwen3:8b` on Ollama, pinned 
 
 Each phase's final run repeats on Claude Opus 5.5 (`claude-opus-5-5`). A strong model picks well among many tools without help, which makes it the harder test for the brain, and if the two models disagree the Opus number decides. Claude Fable 5.2 is more capable and costs twice as much per token. One run on it before the Phase 4 decision is a reasonable extra check. The report-rate test also records how often each model reports unprompted, since a model that ignores the `report` field changes what the brain can learn.
 
-`agents/agent.py` supports Amazon Bedrock and Anthropic. It runs older models at temperature 0 and, because Claude Opus 4.7 and later reject temperature, leaves it out for those and sets effort to `high` on the Anthropic API. Those runs cannot be made deterministic, so the Claude pass runs three times and reports the spread. The eval adds an Ollama provider through `langchain-ollama` as a development dependency only. Adding it refreshes `uv.lock`, which needs the PyTorch package index, so that step runs on the local machine.
+`agents/agent.py` supports Amazon Bedrock, Anthropic and Ollama. It runs older models at temperature 0 and, because Claude Opus 4.7 and later reject temperature, leaves it out for those and sets effort to `high` on the Anthropic API. Those runs cannot be made deterministic, so the Claude pass runs three times and reports the spread. The Ollama provider runs at temperature 0 with a fixed seed, an 8,192-token context and thinking off, because thinking spends that context and Qwen advises against greedy decoding with it on. It comes from `langchain-ollama`, a development dependency only, so the Docker images do not carry it. `scripts/brain_eval/run_tasks.py` records the model's Ollama digest in its report.
 
 ## Phases
 

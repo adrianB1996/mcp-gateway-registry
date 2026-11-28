@@ -12,6 +12,8 @@ Tooling for Phase 0 of the knowledge-graph search plan in [docs/design/knowledge
 | `fake_servers.py` | Serves every corpus server as a fake MCP server at `/<server>/mcp` and logs each call it receives |
 | `harness.py` | Registers the corpus in a registry, runs the lookups and collision queries through search, and scores them |
 | `run_retrieval.py` | The command that runs the harness against a local registry and writes the baseline report |
+| `task_runner.py` | Runs an agent on each task, reads the calls each task added to the fake servers' log, and scores them |
+| `run_tasks.py` | The command that runs the eval agent from `agents/agent.py` on every task and writes the whole-task report |
 
 ## Running the baseline locally
 
@@ -49,6 +51,44 @@ uv run python scripts/brain_eval/run_retrieval.py --arm A --skip-skills \
 The report holds each category's mean NDCG@10, recall@10, MRR and top-1 hit rate, the collision ladder, and every query's ranked results, so Phase 1 can be compared with it query by query. It records the corpus file's SHA-256 and warns when the file matches nothing in `manifest.json`.
 
 Two limits apply to the collision ladder. The search API returns at most 50 results, so a right answer ranked below 50th scores as a miss. Each level is scored by keeping only that level's servers in one ranked list. That matches a registry holding only those servers as long as search scores each document on its own, which holds for the current vector and keyword scoring.
+
+## Running the whole tasks
+
+The whole-task runs give each task's text to the eval agent in `agents/agent.py`. The agent searches the registry, calls tools through the gateway, and the fake servers log each call. A task counts as complete when every tool it expects was called. Extra calls do not fail it, and the report counts them separately.
+
+The log decides the score, not the agent's own account, because a call only counts if it reached a server through the gateway. Tasks run one at a time, so every line a task adds to the log belongs to that task, and nothing else may call the fake servers during a run.
+
+1. Do steps 1 to 3 of the retrieval baseline, and run it once so the corpus is loaded.
+2. Start the fake servers with the log the runner reads, `brain-eval-calls.jsonl` in the directory you run from by default. Pass the same file to both with `--log` and `--call-log` to use another.
+3. Pull the model and check Ollama answers: `ollama pull qwen3:8b`, then `ollama list`. The agent reads `OLLAMA_HOST` and defaults to `http://127.0.0.1:11434`.
+4. Check the setup on a few tasks, then run them all:
+
+```bash
+uv run python scripts/brain_eval/run_tasks.py --split tuning --limit 5
+uv run python scripts/brain_eval/run_tasks.py --arm A --output tasks-A.json
+```
+
+The Claude confirmation pass cannot run at temperature 0, so it runs three times and the report gives each repeat's completion:
+
+```bash
+uv run python scripts/brain_eval/run_tasks.py --provider anthropic --model claude-opus-5-5     --repeats 3 --output tasks-A-claude.json
+```
+
+It reads the key from `ANTHROPIC_API_KEY`. Each task has a time limit (`--timeout`, 300 seconds by default) and a step limit (`--max-steps`, 25 by default). A task that hits either still scores the calls it made.
+
+The report holds completion overall, per split, per user group, per goal, and for hidden tasks by whether tuning saw their goal. Each task keeps the tools the servers saw called, the expected tools it missed, the agent's search queries and requested calls, and any error, so two arms can be compared task by task. For the Ollama provider the report records the model's digest.
+
+The runner gives the agent its own short system prompt instead of `agents/system_prompt.txt`. With the stock prompt qwen3:8b answers tasks in prose without searching. The report records the prompt text.
+
+Tool lookups and collision queries search with `entity_types` of `mcp_server` and `tool` together. The registry keeps tools inside their server's document, so asking for `tool` alone returns nothing.
+
+The registry and the auth server both refuse private upstream addresses. Set `SSRF_ALLOWED_HOSTS=host.docker.internal` in `.env` so the registry accepts the fake servers. The auth server's MCP proxy applies its own guard as well, and on a local Docker Desktop stack it still blocks `host.docker.internal`, so whole-task calls do not reach the fake servers yet.
+
+Three limits apply:
+
+- The billing tasks depend on who asks, and the task text never says. Every task runs with one token, so without memory the agent can only guess between the two billing backends. The `groups` summary shows that gap.
+- Skills are not scored. The eval agent has no tool to load a skill, so the runner checks tools only.
+- The agent sends each search's results, with their input schemas, back to the model. Ten results per search fill much of an 8,192-token context, and when a conversation runs past it Ollama truncates the prompt, which only its own server log reports.
 
 ## The corpus
 

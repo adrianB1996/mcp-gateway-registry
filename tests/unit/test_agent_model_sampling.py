@@ -69,3 +69,35 @@ def test_anthropic_model_keeps_temperature_zero_for_older_models(monkeypatch):
 
     assert model.temperature == 0.0
     assert model.effort is None
+
+
+@pytest.mark.parametrize(
+    ("env_value", "expected"),
+    [
+        (None, "http://127.0.0.1:11434"),
+        ("", "http://127.0.0.1:11434"),
+        ("0.0.0.0:11434", "http://0.0.0.0:11434"),
+        ("http://gpu-box:11434/", "http://gpu-box:11434"),
+    ],
+)
+def test_ollama_base_url_reads_ollama_host(monkeypatch, env_value, expected):
+    if env_value is None:
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST", env_value)
+
+    assert agent.ollama_base_url() == expected
+
+
+def test_ollama_model_runs_at_temperature_zero_with_fixed_context(monkeypatch):
+    pytest.importorskip("langchain_ollama")
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    model = agent._create_model("ollama", "qwen3:8b")
+
+    assert model.model == "qwen3:8b"
+    assert model.temperature == 0.0
+    assert model.seed == 0
+    assert model.num_ctx == 8192
+    assert model.reasoning is False
+    assert model.base_url == "http://127.0.0.1:11434"

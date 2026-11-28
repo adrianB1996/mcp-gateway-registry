@@ -259,6 +259,8 @@ indent-style = "space"
 dev = [
     "factory-boy>=3.3.3",
     "hypothesis>=6.151.4",
+    # Local eval model provider for agents/agent.py (scripts/brain_eval/run_tasks.py)
+    "langchain-ollama>=1.0.0",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "pytest-html>=4.1.1",

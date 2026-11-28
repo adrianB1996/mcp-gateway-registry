@@ -1,0 +1,3 @@
+# The brain-eval corpus is hashed into manifest.json, so it must check out
+# byte for byte as committed, with LF line endings on every platform.
+tests/fixtures/brain_eval/** text eol=lf

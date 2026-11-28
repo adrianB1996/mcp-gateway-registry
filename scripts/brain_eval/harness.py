@@ -35,7 +35,15 @@ DEFAULT_MAX_RESULTS: int = 10
 # The search API caps max_results at 50, which bounds the collision ladder.
 COLLISION_MAX_RESULTS: int = 50
 LIFECYCLE_ACTIVE: str = "active"
-ENTITY_TYPES: dict[str, str] = {"tool": "tool", "server": "mcp_server", "skill": "skill"}
+# Search request scopes per lookup type. The registry keeps tools inside their
+# server's document and has no standalone tool documents, so asking for "tool"
+# alone matches nothing. Tool lookups ask for servers and tools together, the
+# same scope agents/agent.py uses, and are scored on the tools list only.
+ENTITY_TYPES: dict[str, list[str]] = {
+    "tool": ["mcp_server", "tool"],
+    "server": ["mcp_server"],
+    "skill": ["skill"],
+}
 
 
 class RegistryClientLike(Protocol):
@@ -230,7 +238,7 @@ def run_lookup(
 ) -> ItemResult:
     """Run one lookup through search and score it."""
     response = client.semantic_search(
-        lookup.query, entity_types=[ENTITY_TYPES[lookup.entity_type]], max_results=max_results
+        lookup.query, entity_types=ENTITY_TYPES[lookup.entity_type], max_results=max_results
     )
     ranked = result_ids(response, lookup.entity_type)
     return ItemResult(
@@ -279,7 +287,7 @@ def run_collision(
 ) -> list[str]:
     """Run a collision query and return the ranked copies of its generic tool."""
     response = client.semantic_search(
-        case.query, entity_types=[ENTITY_TYPES["tool"]], max_results=COLLISION_MAX_RESULTS
+        case.query, entity_types=ENTITY_TYPES["tool"], max_results=COLLISION_MAX_RESULTS
     )
     copies = {case.target, *case.distractors}
     return [item for item in result_ids(response, "tool") if item in copies]

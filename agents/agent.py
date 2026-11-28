@@ -107,6 +107,17 @@ NO_SAMPLING_MODEL_PATTERN: re.Pattern[str] = re.compile(
 DEFAULT_EFFORT: str = "high"
 DEFAULT_TEMPERATURE: float = 0.0
 
+# Ollama runs the local eval model (qwen3:8b). OLLAMA_HOST is Ollama's own
+# setting and is often a bare host:port, so a scheme is added when missing.
+OLLAMA_HOST_ENV: str = "OLLAMA_HOST"
+DEFAULT_OLLAMA_URL: str = "http://127.0.0.1:11434"
+# 8,192 tokens keeps qwen3:8b at 4-bit inside an 8 GB GPU.
+OLLAMA_NUM_CTX: int = 8192
+OLLAMA_SEED: int = 0
+# Thinking is off: it spends the small context, and Qwen advises against
+# greedy decoding with thinking on, while the eval needs temperature 0.
+OLLAMA_REASONING: bool = False
+
 # The MCP SDK's own HTTP client defaults (mcp.shared._httpx_utils).
 SDK_DEFAULT_TIMEOUT_SECONDS: float = 30.0
 SDK_DEFAULT_SSE_READ_TIMEOUT_SECONDS: float = 300.0
@@ -421,9 +432,10 @@ Examples:
     parser.add_argument(
         "--provider",
         type=str,
-        choices=["anthropic", "bedrock"],
+        choices=["anthropic", "bedrock", "ollama"],
         default="bedrock",
-        help="Model provider to use (default: bedrock)",
+        help="Model provider to use (default: bedrock). ollama needs the dev "
+        "dependencies (uv sync) and a running Ollama, at $OLLAMA_HOST if set",
     )
     parser.add_argument(
         "--model",
@@ -689,7 +701,8 @@ async def invoke_mcp_tool(
     Only the server path, tool name and arguments are chosen per call.
 
     Args:
-        server_name: The name of the MCP server to connect to
+        server_name: The server_path from a search result, such as "/currenttime".
+            Not the server's display name.
         tool_name: The name of the tool to invoke
         arguments: Dictionary containing the arguments for the tool
         supported_transports: Transport protocols (["streamable_http"] or ["sse"])
@@ -1167,6 +1180,42 @@ def _accepts_sampling(
     return NO_SAMPLING_MODEL_PATTERN.search(model_id) is None
 
 
+def ollama_base_url() -> str:
+    """Return Ollama's URL from $OLLAMA_HOST, adding http:// to a bare host:port."""
+    host = os.getenv(OLLAMA_HOST_ENV, "").strip().rstrip("/")
+    if not host:
+        return DEFAULT_OLLAMA_URL
+    if "://" not in host:
+        return f"http://{host}"
+    return host
+
+
+def _create_ollama_model(
+    model_id: str,
+):
+    """Create a ChatOllama model at temperature 0 with a fixed seed and context.
+
+    langchain-ollama is a development dependency, so it is imported here and a
+    missing install is reported instead of breaking the other providers.
+    """
+    try:
+        from langchain_ollama import ChatOllama
+    except ImportError:
+        print("Error: langchain-ollama is not installed. Run: uv sync")
+        return None
+
+    base_url = ollama_base_url()
+    logger.info(f"Using Ollama at {base_url} with num_ctx={OLLAMA_NUM_CTX}")
+    return ChatOllama(
+        model=model_id,
+        base_url=base_url,
+        temperature=DEFAULT_TEMPERATURE,
+        seed=OLLAMA_SEED,
+        num_ctx=OLLAMA_NUM_CTX,
+        reasoning=OLLAMA_REASONING,
+    )
+
+
 def _create_model(
     provider: str,
     model_id: str,
@@ -1175,8 +1224,12 @@ def _create_model(
 
     Older models run at temperature 0. Claude Opus 4.7 and later reject
     temperature, so the agent leaves it out and, on the Anthropic API, sets
-    effort instead. Those runs are not deterministic.
+    effort instead. Those runs are not deterministic. Ollama models run at
+    temperature 0 with a fixed seed.
     """
+    if provider == "ollama":
+        return _create_ollama_model(model_id)
+
     sampling = _accepts_sampling(model_id)
     temperature = DEFAULT_TEMPERATURE if sampling else None
     if not sampling:

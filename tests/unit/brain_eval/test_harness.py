@@ -14,6 +14,7 @@ from brain_eval.harness import (
     load_skills,
     registration_for,
     result_ids,
+    run_lookup,
 )
 from brain_eval.harness import run_retrieval as run_harness
 
@@ -183,7 +184,7 @@ class TestRunRetrieval:
 
         def answer(query, types):
             item = expected.get(query, "")
-            if types == ["tool"]:
+            if "tool" in types:
                 server, _, tool = item.partition("/")
                 return _response(tools=[_tool(server, tool)] if tool else [])
             return _response(servers=[item] if item.startswith("/") else [])
@@ -196,6 +197,14 @@ class TestRunRetrieval:
         assert report.categories["tool-capability"].hit_at_1 == 1.0
         assert report.categories["server-purpose"].hit_at_1 == 1.0
         assert report.ladder[0].level == 1
+
+    def test_tool_lookups_ask_for_servers_and_tools(self, corpus):
+        client = FakeClient()
+        lookup = next(item for item in corpus.lookups if item.entity_type == "tool")
+
+        run_lookup(client, lookup, max_results=10)
+
+        assert client.searches == [(lookup.query, ("mcp_server", "tool"), 10)]
 
     def test_report_holds_no_token(self, corpus):
         report = run_harness(
